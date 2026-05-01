@@ -258,7 +258,7 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
               <th className="text-right">Edge</th>
               <th className="text-right">Timing</th>
               <th className="text-right">Stake</th>
-              {league !== 'world_cup' && <th className="text-center w-20">Log</th>}
+              {league !== 'world_cup' && <th className="text-center w-32">Log</th>}
             </tr>
           </thead>
           <tbody>
@@ -299,35 +299,35 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
 
                         if (state === 'logged') {
                           return (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded border bg-good-soft border-good text-good">
-                              <Check size={12} />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-semibold bg-good-soft border-good text-good">
+                              <Check size={10} /> Logged
                             </span>
                           )
                         }
                         if (state === 'logging' || state === 'logging-real') {
                           const isReal = state === 'logging-real'
                           return (
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded border bg-ink-800 ${isReal ? 'border-warn text-warn' : 'border-accent text-accent'}`}>
-                              <Loader2 size={12} className="animate-spin" />
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium bg-ink-800 ${isReal ? 'border-warn text-warn' : 'border-accent text-accent'}`}>
+                              <Loader2 size={10} className="animate-spin" /> {isReal ? 'Cash…' : 'Paper…'}
                             </span>
                           )
                         }
                         if (state === 'confirming-real') {
                           return (
-                            <span className="inline-flex gap-1" title={`Confirm real-money $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}>
+                            <span className="inline-flex gap-1" title={`Confirm CASH bet $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}>
                               <button
                                 onClick={() => handleLog(b, 'real')}
-                                title={`Yes — log real $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
-                                className="inline-flex items-center justify-center w-6 h-6 rounded border bg-warn-soft border-warn text-warn hover:opacity-80"
+                                title={`Yes — log REAL $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border bg-warn text-ink-950 border-warn font-semibold text-[10px] hover:opacity-90"
                               >
-                                <Check size={12} />
+                                <Check size={10} /> Confirm Cash
                               </button>
                               <button
                                 onClick={() => cancelConfirm(b)}
                                 title="Cancel"
-                                className="inline-flex items-center justify-center w-6 h-6 rounded border bg-ink-800 border-ink-700 text-slate-400 hover:border-slate-500"
+                                className="inline-flex items-center justify-center px-1.5 py-0.5 rounded border bg-ink-800 border-ink-700 text-slate-400 hover:border-slate-500"
                               >
-                                <X size={12} />
+                                <X size={10} />
                               </button>
                             </span>
                           )
@@ -337,26 +337,26 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                             <button
                               onClick={() => handleLog(b, 'paper')}
                               disabled={blocked}
-                              title={blocked ? reason : `Log paper bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
-                              className={`inline-flex items-center justify-center w-6 h-6 rounded border transition-colors ${
+                              title={blocked ? reason : `Log PAPER bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${
                                 blocked
                                   ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
-                                  : 'bg-ink-800 border-ink-700 hover:border-accent text-slate-300'
+                                  : 'bg-accent-soft border-accent/40 text-accent hover:bg-accent hover:text-white'
                               }`}
                             >
-                              <Plus size={12} />
+                              <Plus size={10} /> Paper
                             </button>
                             <button
                               onClick={() => startConfirmReal(b)}
                               disabled={blocked}
-                              title={blocked ? reason : `Log REAL-money bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
-                              className={`inline-flex items-center justify-center w-6 h-6 rounded border transition-colors ${
+                              title={blocked ? reason : `Log CASH (real-money) bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${
                                 blocked
                                   ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
-                                  : 'bg-ink-800 border-ink-700 hover:border-warn text-warn'
+                                  : 'bg-warn-soft border-warn/40 text-warn hover:bg-warn hover:text-ink-950'
                               }`}
                             >
-                              <DollarSign size={12} />
+                              <DollarSign size={10} /> Cash
                             </button>
                           </span>
                         )
