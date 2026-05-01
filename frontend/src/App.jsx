@@ -170,6 +170,13 @@ export default function App() {
     }
   }
 
+  function onDeleteBet(deletedId) {
+    // Drop from local state immediately so the +EV grid stops hiding the row
+    // and the log row disappears. Portfolio re-queries on tab change so it'll
+    // reflect the deletion next time it's opened.
+    setBets(prev => prev.filter(b => b.id !== deletedId))
+  }
+
   async function logPaperBet(prediction, bet) {
     try {
       await api.logBet({
@@ -230,7 +237,7 @@ export default function App() {
       <FilterTabs active={tab} onChange={setTab} counts={counts} />
 
       {tab === 'log' ? (
-        <PaperTradeLog bets={bets} onMarkResult={markBetResult} />
+        <PaperTradeLog bets={bets} onMarkResult={markBetResult} onDeleteBet={onDeleteBet} />
       ) : tab === 'portfolio' ? (
         <PortfolioView />
       ) : tab === 'anomalies' ? (

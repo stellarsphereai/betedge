@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { api } from '../api'
 
 function fmtMoney(n) { return n == null ? '—' : `$${Number(n).toFixed(2)}` }
 function fmtTime(iso) { try { return new Date(iso).toLocaleString() } catch { return iso } }
@@ -122,7 +123,57 @@ function MarkResultControl({ bet, onMark }) {
   )
 }
 
-export default function PaperTradeLog({ bets, onMarkResult }) {
+function RemoveControl({ bet, onDeleted }) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  async function doDelete() {
+    setBusy(true); setErr(null)
+    try {
+      await api.deleteBet(bet.id)
+      onDeleted?.(bet.id)
+    } catch (e) {
+      setErr(e.message || String(e))
+      setBusy(false)
+    }
+  }
+
+  if (err) {
+    return <span className="text-bad text-[10px]" title={err}>error</span>
+  }
+  if (!confirming) {
+    return (
+      <button
+        onClick={() => setConfirming(true)}
+        title="Remove this bet — moves it back to the +EV grid"
+        className="px-1.5 py-0.5 text-[12px] leading-none text-slate-500 hover:text-bad rounded hover:bg-bad-soft"
+      >
+        ✕
+      </button>
+    )
+  }
+  return (
+    <div className="inline-flex gap-1">
+      <button
+        onClick={doDelete}
+        disabled={busy}
+        className="px-2 py-0.5 text-[10px] font-medium rounded bg-bad text-white hover:opacity-90 disabled:opacity-50"
+      >
+        {busy ? '…' : 'Remove'}
+      </button>
+      <button
+        onClick={() => setConfirming(false)}
+        disabled={busy}
+        className="px-2 py-0.5 text-[10px] rounded bg-ink-800 text-slate-300 hover:bg-ink-700 border border-ink-700"
+      >
+        Cancel
+      </button>
+    </div>
+  )
+}
+
+export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet }) {
   const rows = (bets || []).filter(b => b.is_paper)
 
   if (!rows.length) {
@@ -152,6 +203,7 @@ export default function PaperTradeLog({ bets, onMarkResult }) {
             <th className="text-left">Match outcome</th>
             <th className="text-center">Status</th>
             <th className="text-left">When</th>
+            <th className="text-center"></th>
           </tr>
         </thead>
         <tbody>
@@ -187,6 +239,9 @@ export default function PaperTradeLog({ bets, onMarkResult }) {
                   <MarkResultControl bet={b} onMark={onMarkResult} />
                 </td>
                 <td className="text-slate-400">{fmtTime(b.timestamp)}</td>
+                <td className="text-center px-2">
+                  <RemoveControl bet={b} onDeleted={onDeleteBet} />
+                </td>
               </tr>
             )
           })}

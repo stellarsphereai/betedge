@@ -27,6 +27,11 @@ export const api = {
   modelHealth: (league = null) => get(`/model-health${league ? `?league=${league}` : ''}`),
   logBet: (b) => post('/bets', b),
   markResult: (betId, payload) => post(`/bets/${betId}/mark-result`, payload),
+  deleteBet: async (betId) => {
+    const r = await fetch(`/bets/${betId}`, { method: 'DELETE' })
+    if (!r.ok) throw new Error(`HTTP ${r.status} on DELETE /bets/${betId}`)
+    return r.json()
+  },
   sendDigest: () => post('/send-digest'),
   digestPreview: () => get('/digest-preview'),
   portfolioSummary: ({ league, isPaper } = {}) => {

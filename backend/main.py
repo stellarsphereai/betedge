@@ -851,6 +851,19 @@ async def mark_result_for_bet(bet_id: int, payload: MarkResultInput):
         raise HTTPException(400, str(e))
 
 
+@app.delete("/bets/{bet_id}")
+async def delete_bet(bet_id: int):
+    """Hard-delete a logged bet. Used by the paper-trade-log "remove" button:
+    when a user logs a bet by mistake (or changes their mind), this clears
+    the row so the bet reappears in the +EV grid and drops out of portfolio
+    summaries on the next refresh."""
+    with db() as conn:
+        cur = conn.execute("DELETE FROM bets_placed WHERE id = ?", (bet_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, f"bet {bet_id} not found")
+    return {"deleted": True, "id": bet_id}
+
+
 @app.post("/bets/capture-closing-sweep")
 async def capture_closing_sweep():
     """Walk every open paper bet whose match has kicked off and capture its
