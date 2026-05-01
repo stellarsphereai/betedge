@@ -873,6 +873,30 @@ async def mark_result_for_bet(bet_id: int, payload: MarkResultInput):
         raise HTTPException(400, str(e))
 
 
+@app.post("/bets/{bet_id}/set-paper")
+async def set_bet_paper(bet_id: int, value: bool):
+    """Flip a bet between paper and cash (real money) mode. Only allowed
+    while status='open' — settled bets already moved (or didn't move) the
+    book balance, and retroactively flipping would diverge book balances
+    from reality."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status, is_paper FROM bets_placed WHERE id = ?", (bet_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, f"bet {bet_id} not found")
+        if row["status"] != "open":
+            raise HTTPException(
+                400,
+                f"can't change mode on a {row['status']} bet — settled bets are locked",
+            )
+        conn.execute(
+            "UPDATE bets_placed SET is_paper = ? WHERE id = ?",
+            (1 if value else 0, bet_id),
+        )
+    return {"ok": True, "id": bet_id, "is_paper": value}
+
+
 @app.delete("/bets/{bet_id}")
 async def delete_bet(bet_id: int):
     """Hard-delete a logged bet. Used by the paper-trade-log "remove" button:

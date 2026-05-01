@@ -123,49 +123,81 @@ function MarkResultControl({ bet, onMark }) {
   )
 }
 
-function RemoveControl({ bet, onDeleted }) {
-  const [confirming, setConfirming] = useState(false)
-  const [busy, setBusy] = useState(false)
+function ActionsCell({ bet, onDeleted, onModeChanged }) {
+  const [stage, setStage] = useState('idle')   // 'idle' | 'confirm-cancel' | 'busy'
   const [err, setErr] = useState(null)
 
-  async function doDelete() {
-    setBusy(true); setErr(null)
+  const isOpen = bet.status === 'open'
+  const targetIsPaper = !bet.is_paper
+  const targetLabel = targetIsPaper ? 'Paper' : 'Cash'
+
+  async function doCancel() {
+    setStage('busy'); setErr(null)
     try {
       await api.deleteBet(bet.id)
       onDeleted?.(bet.id)
     } catch (e) {
       setErr(e.message || String(e))
-      setBusy(false)
+      setStage('idle')
+    }
+  }
+
+  async function doSwitch() {
+    setStage('busy'); setErr(null)
+    try {
+      const r = await api.setBetPaper(bet.id, targetIsPaper)
+      onModeChanged?.(bet.id, !!r.is_paper)
+      setStage('idle')
+    } catch (e) {
+      setErr(e.message || String(e))
+      setStage('idle')
     }
   }
 
   if (err) {
     return <span className="text-bad text-[10px]" title={err}>error</span>
   }
-  if (!confirming) {
+
+  if (stage === 'busy') {
+    return <span className="text-[10px] text-slate-500">…</span>
+  }
+
+  if (stage === 'confirm-cancel') {
     return (
-      <button
-        onClick={() => setConfirming(true)}
-        title="Remove this bet — moves it back to the +EV grid"
-        className="px-1.5 py-0.5 text-[12px] leading-none text-slate-500 hover:text-bad rounded hover:bg-bad-soft"
-      >
-        ✕
-      </button>
+      <div className="inline-flex gap-1">
+        <button
+          onClick={doCancel}
+          className="px-2 py-0.5 text-[10px] font-medium rounded bg-bad text-white hover:opacity-90"
+        >
+          Cancel bet
+        </button>
+        <button
+          onClick={() => setStage('idle')}
+          className="px-2 py-0.5 text-[10px] rounded bg-ink-800 text-slate-300 hover:bg-ink-700 border border-ink-700"
+        >
+          Keep
+        </button>
+      </div>
     )
   }
+
   return (
     <div className="inline-flex gap-1">
+      {isOpen && (
+        <button
+          onClick={doSwitch}
+          title={`Switch to ${targetLabel} mode`}
+          className="px-2 py-0.5 text-[10px] rounded border border-ink-700 text-slate-300 hover:border-accent hover:text-accent"
+        >
+          → {targetLabel}
+        </button>
+      )}
       <button
-        onClick={doDelete}
-        disabled={busy}
-        className="px-2 py-0.5 text-[10px] font-medium rounded bg-bad text-white hover:opacity-90 disabled:opacity-50"
-      >
-        {busy ? '…' : 'Remove'}
-      </button>
-      <button
-        onClick={() => setConfirming(false)}
-        disabled={busy}
-        className="px-2 py-0.5 text-[10px] rounded bg-ink-800 text-slate-300 hover:bg-ink-700 border border-ink-700"
+        onClick={() => setStage('confirm-cancel')}
+        title={isOpen
+          ? 'Cancel this bet — removes it from the log and reopens it on the +EV grid'
+          : 'Cancel this bet — removes it from the log and from portfolio totals'}
+        className="px-2 py-0.5 text-[10px] rounded border border-ink-700 text-slate-400 hover:border-bad hover:text-bad"
       >
         Cancel
       </button>
@@ -173,7 +205,7 @@ function RemoveControl({ bet, onDeleted }) {
   )
 }
 
-export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet }) {
+export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeChangeBet }) {
   const [mode, setMode] = useState('paper')  // 'paper' | 'cash'
   const all = bets || []
   const paperRows = all.filter(b => b.is_paper)
@@ -278,8 +310,8 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet }) {
                   <MarkResultControl bet={b} onMark={onMarkResult} />
                 </td>
                 <td className="text-slate-400">{fmtTime(b.timestamp)}</td>
-                <td className="text-center px-2">
-                  <RemoveControl bet={b} onDeleted={onDeleteBet} />
+                <td className="text-center px-2 whitespace-nowrap">
+                  <ActionsCell bet={b} onDeleted={onDeleteBet} onModeChanged={onModeChangeBet} />
                 </td>
               </tr>
             )

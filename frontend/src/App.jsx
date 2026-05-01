@@ -179,6 +179,10 @@ export default function App() {
     setBets(prev => prev.filter(b => b.id !== deletedId))
   }
 
+  function onModeChangeBet(betId, isPaper) {
+    setBets(prev => prev.map(b => b.id === betId ? { ...b, is_paper: isPaper ? 1 : 0 } : b))
+  }
+
   async function _logBet(prediction, bet, isPaper) {
     try {
       await api.logBet({
@@ -249,7 +253,12 @@ export default function App() {
       <FilterTabs active={tab} onChange={setTab} counts={counts} />
 
       {tab === 'log' ? (
-        <PaperTradeLog bets={bets} onMarkResult={markBetResult} onDeleteBet={onDeleteBet} />
+        <PaperTradeLog
+          bets={bets}
+          onMarkResult={markBetResult}
+          onDeleteBet={onDeleteBet}
+          onModeChangeBet={onModeChangeBet}
+        />
       ) : tab === 'portfolio' ? (
         <PortfolioView />
       ) : tab === 'anomalies' ? (

@@ -32,6 +32,14 @@ export const api = {
     if (!r.ok) throw new Error(`HTTP ${r.status} on DELETE /bets/${betId}`)
     return r.json()
   },
+  setBetPaper: async (betId, isPaper) => {
+    const r = await fetch(`/bets/${betId}/set-paper?value=${isPaper}`, { method: 'POST' })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      throw new Error(body?.detail || `HTTP ${r.status}`)
+    }
+    return r.json()
+  },
   sendDigest: () => post('/send-digest'),
   digestPreview: () => get('/digest-preview'),
   bestBets: ({ league = 'all', limit = 3 } = {}) => {
