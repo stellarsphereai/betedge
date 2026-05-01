@@ -1,0 +1,474 @@
+{
+  "n": 20,
+  "correct_winner": 15,
+  "winner_accuracy": 0.75,
+  "avg_brier": 0.4024,
+  "calibration": [
+    {
+      "bucket": "0.40-0.50",
+      "n": 4,
+      "model_avg": 0.439,
+      "actual_hit_rate": 0.5
+    },
+    {
+      "bucket": "0.50-0.60",
+      "n": 5,
+      "model_avg": 0.548,
+      "actual_hit_rate": 0.8
+    },
+    {
+      "bucket": "0.60-0.70",
+      "n": 5,
+      "model_avg": 0.649,
+      "actual_hit_rate": 1.0
+    },
+    {
+      "bucket": "0.70-1.01",
+      "n": 6,
+      "model_avg": 0.799,
+      "actual_hit_rate": 0.667
+    }
+  ],
+  "rows": [
+    {
+      "fixture_id": 1035534,
+      "date": "2024-05-11T14:00:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Bournemouth",
+      "away": "Brentford",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "actual": "away",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.4595,
+        "draw": 0.2101,
+        "away": 0.3304
+      },
+      "home_xg": 2.559,
+      "away_xg": 2.155,
+      "brier": 0.7036
+    },
+    {
+      "fixture_id": 1035535,
+      "date": "2024-05-13T19:00:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Aston Villa",
+      "away": "Liverpool",
+      "score": {
+        "home": 3,
+        "away": 3
+      },
+      "actual": "draw",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.121,
+        "draw": 0.1356,
+        "away": 0.7434
+      },
+      "home_xg": 1.854,
+      "away_xg": 4.654,
+      "brier": 1.3145
+    },
+    {
+      "fixture_id": 1035536,
+      "date": "2024-05-11T14:00:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Everton",
+      "away": "Sheffield Utd",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.5693,
+        "draw": 0.1877,
+        "away": 0.243
+      },
+      "home_xg": 3.257,
+      "away_xg": 2.102,
+      "brier": 0.2798
+    },
+    {
+      "fixture_id": 1035537,
+      "date": "2024-05-11T11:30:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Fulham",
+      "away": "Manchester City",
+      "score": {
+        "home": 0,
+        "away": 4
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.2705,
+        "draw": 0.1969,
+        "away": 0.5326
+      },
+      "home_xg": 2.092,
+      "away_xg": 2.97,
+      "brier": 0.3304
+    },
+    {
+      "fixture_id": 1035538,
+      "date": "2024-05-12T15:30:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Manchester United",
+      "away": "Arsenal",
+      "score": {
+        "home": 0,
+        "away": 1
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.1019,
+        "draw": 0.1256,
+        "away": 0.7725
+      },
+      "home_xg": 1.642,
+      "away_xg": 4.568,
+      "brier": 0.0779
+    },
+    {
+      "fixture_id": 1035539,
+      "date": "2024-05-11T14:00:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Newcastle",
+      "away": "Brighton",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "actual": "draw",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.7209,
+        "draw": 0.149,
+        "away": 0.1301
+      },
+      "home_xg": 3.747,
+      "away_xg": 1.561,
+      "brier": 1.2608
+    },
+    {
+      "fixture_id": 1035540,
+      "date": "2024-05-11T16:30:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Nottingham Forest",
+      "away": "Chelsea",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "actual": "away",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.4205,
+        "draw": 0.2005,
+        "away": 0.379
+      },
+      "home_xg": 3.003,
+      "away_xg": 2.846,
+      "brier": 0.6027
+    },
+    {
+      "fixture_id": 1035541,
+      "date": "2024-05-11T14:00:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Tottenham",
+      "away": "Burnley",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.6167,
+        "draw": 0.174,
+        "away": 0.2092
+      },
+      "home_xg": 4.571,
+      "away_xg": 2.613,
+      "brier": 0.221
+    },
+    {
+      "fixture_id": 1035542,
+      "date": "2024-05-11T14:00:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "West Ham",
+      "away": "Luton",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.6223,
+        "draw": 0.1749,
+        "away": 0.2028
+      },
+      "home_xg": 3.575,
+      "away_xg": 2.012,
+      "brier": 0.2144
+    },
+    {
+      "fixture_id": 1035543,
+      "date": "2024-05-11T14:00:00+00:00",
+      "round": "Regular Season - 37",
+      "home": "Wolves",
+      "away": "Crystal Palace",
+      "score": {
+        "home": 1,
+        "away": 3
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.2349,
+        "draw": 0.2183,
+        "away": 0.5468
+      },
+      "home_xg": 1.485,
+      "away_xg": 2.34,
+      "brier": 0.3082
+    },
+    {
+      "fixture_id": 1035544,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Arsenal",
+      "away": "Everton",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.8104,
+        "draw": 0.1182,
+        "away": 0.0714
+      },
+      "home_xg": 3.807,
+      "away_xg": 1.091,
+      "brier": 0.055
+    },
+    {
+      "fixture_id": 1035545,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Brentford",
+      "away": "Newcastle",
+      "score": {
+        "home": 2,
+        "away": 4
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.375,
+        "draw": 0.2057,
+        "away": 0.4193
+      },
+      "home_xg": 2.513,
+      "away_xg": 2.662,
+      "brier": 0.5201
+    },
+    {
+      "fixture_id": 1035546,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Brighton",
+      "away": "Manchester United",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "actual": "away",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.5361,
+        "draw": 0.1931,
+        "away": 0.2708
+      },
+      "home_xg": 3.162,
+      "away_xg": 2.225,
+      "brier": 0.8564
+    },
+    {
+      "fixture_id": 1035547,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Burnley",
+      "away": "Nottingham Forest",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.2573,
+        "draw": 0.1895,
+        "away": 0.5532
+      },
+      "home_xg": 2.214,
+      "away_xg": 3.283,
+      "brier": 0.3017
+    },
+    {
+      "fixture_id": 1035548,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Chelsea",
+      "away": "Bournemouth",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.6305,
+        "draw": 0.17,
+        "away": 0.1995
+      },
+      "home_xg": 4.039,
+      "away_xg": 2.24,
+      "brier": 0.2052
+    },
+    {
+      "fixture_id": 1035549,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Crystal Palace",
+      "away": "Aston Villa",
+      "score": {
+        "home": 5,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.6813,
+        "draw": 0.1594,
+        "away": 0.1592
+      },
+      "home_xg": 3.772,
+      "away_xg": 1.794,
+      "brier": 0.1523
+    },
+    {
+      "fixture_id": 1035550,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Liverpool",
+      "away": "Wolves",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.8654,
+        "draw": 0.0836,
+        "away": 0.0511
+      },
+      "home_xg": 5.609,
+      "away_xg": 1.375,
+      "brier": 0.0277
+    },
+    {
+      "fixture_id": 1035551,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Luton",
+      "away": "Fulham",
+      "score": {
+        "home": 2,
+        "away": 4
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.1464,
+        "draw": 0.1616,
+        "away": 0.692
+      },
+      "home_xg": 1.537,
+      "away_xg": 3.423,
+      "brier": 0.1424
+    },
+    {
+      "fixture_id": 1035552,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Manchester City",
+      "away": "West Ham",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.8809,
+        "draw": 0.075,
+        "away": 0.0441
+      },
+      "home_xg": 6.361,
+      "away_xg": 1.442,
+      "brier": 0.0218
+    },
+    {
+      "fixture_id": 1035553,
+      "date": "2024-05-19T15:00:00+00:00",
+      "round": "Regular Season - 38",
+      "home": "Sheffield Utd",
+      "away": "Tottenham",
+      "score": {
+        "home": 0,
+        "away": 3
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.3444,
+        "draw": 0.1982,
+        "away": 0.4573
+      },
+      "home_xg": 3.101,
+      "away_xg": 3.592,
+      "brier": 0.4524
+    }
+  ]
+}

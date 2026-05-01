@@ -1,0 +1,296 @@
+"""Morning digest email — plain-text, mobile-friendly.
+
+Renders the same shape as the spec:
+    === TODAY'S BETS ===
+    [league] [home] vs [away] — [time]
+    Bet: [outcome] at [odds] on [book]
+    ...
+    === BANKROLL STATUS ===
+    Bankroll / ROI / CLV / accuracy / mode
+
+Sending uses STARTTLS on port 587 with a Gmail app password.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import smtplib
+from datetime import datetime, timezone
+from email.mime.text import MIMEText
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+log = logging.getLogger("arb.digest")
+
+
+def _fmt_time(iso: str | None) -> str:
+    if not iso:
+        return ""
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%a %b %d, %H:%M UTC")
+    except ValueError:
+        return iso
+
+
+def render(ev_payload: dict, stats_payload: dict, max_bets: int = 3) -> tuple[str, str]:
+    """Return (subject, body)."""
+    import anomaly  # local import keeps this module standalone-importable
+    bets_all = (ev_payload or {}).get("bets", []) or []
+    excluded_ids = anomaly.excluded_match_ids_today()
+    excluded_today = anomaly.recent(limit=200)
+    # Filter out anomaly-flagged bets entirely from the digest's main list,
+    # plus any bet that already self-reports an excluding anomaly_flag.
+    def _is_flagged(b: dict) -> bool:
+        if b.get("match_id") in excluded_ids:
+            return True
+        for f in b.get("anomaly_flags") or []:
+            if f.get("excludes_bet") or f.get("downgrades_to_low"):
+                return True
+        return False
+    bets = [b for b in bets_all if not _is_flagged(b)][:max_bets]
+    league_mode = (stats_payload or {}).get("league_mode", "epl")
+    bankroll = (stats_payload or {}).get("bankroll", 0)
+    weekly = (stats_payload or {}).get("weekly", {}) or {}
+    accuracy_data = (stats_payload or {}).get("accuracy", {}) or {}
+
+    today = datetime.now(timezone.utc).strftime("%a %b %d, %Y")
+    n_bets = len(bets)
+    league_label = "WC" if league_mode == "world_cup" else "EPL"
+    subject = f"{league_label} Bets Today — {today} — {n_bets} bet{'s' if n_bets != 1 else ''} found"
+
+    lines: list[str] = ["=== TODAY'S BETS ==="]
+    if not bets:
+        lines.append("(no +EV bets at the current edge threshold)")
+    for b in bets:
+        bookmaker = b.get("best_book") or b.get("book")
+        odds = b.get("best_odds") or b.get("decimal_odds")
+        edge_pct = (b.get("edge") or 0) * 100
+        timing = b.get("timing", "GREEN")
+        stake = b.get("stake", 0)
+        m_home = (b.get("model_prob_home") or 0)
+        # /ev-bets currently emits per-outcome rows; pull match-level model probs by re-asking
+        # the prediction directly. For simplicity we inline what /ev-bets returns.
+        outcome_label = {"home": b.get("home_team"), "away": b.get("away_team"), "draw": "Draw"}.get(b["outcome"], b["outcome"])
+
+        lines.append(
+            f"\n[{b.get('league', league_mode).upper()}] "
+            f"{b.get('home_team')} vs {b.get('away_team')} — {_fmt_time(b.get('commence_time'))}"
+        )
+        lines.append(f"Bet: {outcome_label} at {odds} on {bookmaker}")
+        lines.append(
+            f"Stake: ${stake:.0f} | Edge: {edge_pct:.2f}% | Timing: {timing}"
+        )
+        # Model prob the bet relies on (the side we're backing)
+        lines.append(f"Model: {b.get('model_prob', 0)*100:.1f}% (own outcome)")
+        lines.append(f"Confidence: {b.get('confidence', 'MEDIUM')}")
+        lines.append("---")
+
+    lines.append("")
+    lines.append("=== BANKROLL STATUS ===")
+    lines.append(f"Bankroll: ${bankroll:.2f}")
+    lines.append(f"Week ROI: {(weekly.get('roi') or 0) * 100:.2f}%  ({weekly.get('total_bets', 0)} bets)")
+    avg_clv = weekly.get("avg_clv")
+    lines.append(f"CLV Average: {avg_clv if avg_clv is not None else 'n/a'}")
+    win_rate = accuracy_data.get("win_rate")
+    n_pred = accuracy_data.get("n_predictions", 0)
+    if win_rate is not None and n_pred > 0:
+        lines.append(f"Model accuracy: {win_rate * 100:.1f}% (last {n_pred} predictions)")
+    else:
+        lines.append("Model accuracy: not enough settled predictions yet")
+    mode_label = "WORLD CUP LIVE" if league_mode == "world_cup" else "EPL PAPER TRADE"
+    lines.append(f"Mode: {mode_label}")
+
+    if excluded_today:
+        lines.append("")
+        lines.append("=== ANOMALIES DETECTED ===")
+        lines.append(
+            f"({len(excluded_today)} flag{'s' if len(excluded_today) != 1 else ''} today — "
+            "predictions/bets these touched were excluded from recommendations)"
+        )
+        # One line per anomaly, grouped by match for readability.
+        seen_keys: set[tuple[str, str]] = set()
+        for a in excluded_today:
+            key = (a.get("match_id") or "", a.get("anomaly_type") or "")
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            home = a.get("home_team") or "?"
+            away = a.get("away_team") or "?"
+            atype = a.get("anomaly_type") or "?"
+            desc = a.get("description") or ""
+            lines.append(f"- {home} vs {away}: {atype} — {desc}")
+
+    # Self-eval health summary — pulled from prediction_results + bias_log
+    # which the 23:55 cron writes nightly. Falls back to "warming up" when no
+    # results have settled yet.
+    try:
+        import self_eval
+        health = self_eval.health_summary(league=None)
+    except Exception:
+        health = None
+    if health:
+        last10 = health["rolling"].get("last_10")
+        last20 = health["rolling"].get("last_20")
+        baseline = health.get("baseline") or {}
+        status = health.get("status")
+        delta_brier = health.get("delta_brier")
+        status_label = {
+            "on_track": "On track",
+            "monitor":  "Monitor",
+            "review":   "Review needed",
+            "no_data":  "Warming up — no settled predictions yet",
+        }.get(status, status or "")
+        lines.append("")
+        lines.append("=== MODEL PERFORMANCE ===")
+        if last10:
+            lines.append(
+                f"Last 10 matches: {last10['correct']}/{last10['n']} correct "
+                f"({last10['winner_accuracy']*100:.1f}%)"
+            )
+        if last20:
+            lines.append(
+                f"Last 20 matches: {last20['correct']}/{last20['n']} correct "
+                f"({last20['winner_accuracy']*100:.1f}%)"
+            )
+        baseline_brier = baseline.get("avg_brier")
+        if last20 and baseline_brier is not None:
+            lines.append(
+                f"Avg Brier: {last20['avg_brier']:.4f} (baseline: {baseline_brier:.4f}"
+                f"{f', Δ {delta_brier:+.4f}' if delta_brier is not None else ''})"
+            )
+        lines.append(f"Status: {status_label}")
+
+        lines.append("")
+        lines.append("=== BIAS ALERTS ===")
+        alerts = health.get("alerts") or []
+        if not alerts:
+            lines.append("No bias detected ✅")
+        else:
+            for a in alerts:
+                check = a.get("check_name") or "?"
+                desc = a.get("description") or ""
+                fix = a.get("suggested_adjustment")
+                lines.append(f"- [{check}] {desc}")
+                if fix:
+                    lines.append(f"    suggested: {fix}")
+
+    return subject, "\n".join(lines)
+
+
+def render_weekly_accuracy(snapshot_payload: dict) -> tuple[str, str]:
+    """`snapshot_payload` is the dict returned by calibrate.write_weekly_snapshot()."""
+    date = snapshot_payload.get("date", "")
+    subject = f"BetEdge NY · weekly accuracy snapshot — {date}"
+    lines = [f"Weekly accuracy snapshot · {date}", "=" * 50, ""]
+    for snap in snapshot_payload.get("snapshots", []):
+        league = snap["league"].upper()
+        n = snap["n_settled"]
+        if n == 0:
+            lines.append(f"[{league}]  no settled predictions yet")
+        else:
+            lines.append(
+                f"[{league}]  n={n:<3}  Brier={snap['avg_brier']:.4f}  "
+                f"win_rate={snap['win_rate']*100:.1f}%"
+            )
+        if snap.get("n_clv_samples"):
+            avg_clv = snap.get("avg_clv")
+            avg_str = f"{avg_clv:+.2f}" if avg_clv is not None else "—"
+            lines.append(f"           CLV n={snap['n_clv_samples']}  avg={avg_str}")
+        lines.append("")
+    lines.append("Trend: query accuracy_snapshots table or hit /admin/accuracy-history.")
+    return subject, "\n".join(lines)
+
+
+def render_wc_phase_report(check_payload: dict) -> tuple[str, str]:
+    """`check_payload` is the dict returned by wc_calibrate.run_post_phase_check()."""
+    phase = check_payload.get("phase", "?")
+    n = check_payload.get("n_settled", 0)
+    n_min = check_payload.get("n_min_for_grid_search", 30)
+    snap = check_payload.get("snapshot", {})
+    subject = f"BetEdge NY · World Cup phase report — {phase}"
+    lines = [
+        f"World Cup phase report · phase: {phase}",
+        "=" * 50,
+        f"Settled WC predictions: {n}",
+        f"Eligibility threshold (WC-specific): {n_min}",
+        "",
+    ]
+    if snap.get("avg_brier") is not None:
+        lines.append(f"Avg Brier   : {snap['avg_brier']:.4f}")
+        lines.append(f"Win rate    : {snap['win_rate']*100:.1f}%")
+    else:
+        lines.append("No settled fixtures yet — accuracy can't be scored.")
+    if snap.get("n_clv_samples"):
+        avg_clv = snap.get("avg_clv")
+        avg_str = f"{avg_clv:+.2f}" if avg_clv is not None else "—"
+        lines.append(f"CLV samples : {snap['n_clv_samples']}  avg={avg_str}")
+    lines.append("")
+    if check_payload.get("eligible"):
+        grid = check_payload.get("grid_search") or {}
+        if grid.get("implemented"):
+            lines.append("ELIGIBLE for grid search — recommendation in attached payload.")
+        else:
+            lines.append(f"ELIGIBLE for grid search — engine not yet wired ({grid.get('note','')})")
+    else:
+        lines.append("Below grid-search threshold — gathering data only.")
+    lines.append("")
+    lines.append("WC params live in model_params_wc.json (when present). Never auto-applied.")
+    return subject, "\n".join(lines)
+
+
+def render_monthly_calibration(check_payload: dict) -> tuple[str, str]:
+    """`check_payload` is the dict returned by calibrate.run_monthly_calibration_check()."""
+    n_min = check_payload.get("n_min_for_grid_search")
+    subject = "BetEdge NY · monthly calibration check"
+    lines = [
+        "Monthly calibration check",
+        "=" * 50,
+        f"Threshold for grid search: n ≥ {n_min} settled predictions per league.",
+        "",
+    ]
+    for r in check_payload.get("results", []):
+        league = r["league"].upper()
+        n = r["n_settled"]
+        if r["eligible_for_grid_search"]:
+            grid = r.get("grid_search") or {}
+            if grid.get("implemented"):
+                lines.append(f"[{league}]  ELIGIBLE  n={n} → recommendation: see grid_search payload")
+            else:
+                note = grid.get("note", "")
+                lines.append(f"[{league}]  ELIGIBLE  n={n} → grid search engine not yet wired ({note})")
+        else:
+            lines.append(f"[{league}]  GATHERING  n={n}/{n_min}  (need {r['shortfall']} more)")
+    lines.append("")
+    lines.append("Recommendations are NEVER auto-applied. Review and edit model.py manually.")
+    return subject, "\n".join(lines)
+
+
+def send(subject: str, body: str, to_addr: str | None = None) -> dict:
+    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    user = os.getenv("SMTP_USER", "")
+    password = (os.getenv("SMTP_PASS", "") or "").replace(" ", "")
+    to_addr = to_addr or os.getenv("DIGEST_EMAIL", "") or user
+
+    if not (user and password and to_addr):
+        return {"sent": False, "reason": "SMTP_USER / SMTP_PASS / DIGEST_EMAIL not all set"}
+
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = user
+    msg["To"] = to_addr
+
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.starttls()
+            s.login(user, password)
+            s.send_message(msg)
+    except smtplib.SMTPAuthenticationError as e:
+        return {"sent": False, "reason": f"SMTP auth failed: {e.smtp_code} {e.smtp_error.decode(errors='ignore')}"}
+    except Exception as e:
+        return {"sent": False, "reason": f"{type(e).__name__}: {e}"}
+
+    return {"sent": True, "to": to_addr, "subject": subject}

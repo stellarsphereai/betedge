@@ -1,0 +1,707 @@
+{
+  "n": 29,
+  "correct_winner": 11,
+  "winner_accuracy": 0.3793,
+  "avg_brier": 0.7124,
+  "calibration": [
+    {
+      "bucket": "0.00-0.40",
+      "n": 1,
+      "model_avg": 0.394,
+      "actual_hit_rate": 1.0
+    },
+    {
+      "bucket": "0.40-0.50",
+      "n": 6,
+      "model_avg": 0.46,
+      "actual_hit_rate": 0.5
+    },
+    {
+      "bucket": "0.50-0.60",
+      "n": 8,
+      "model_avg": 0.547,
+      "actual_hit_rate": 0.125
+    },
+    {
+      "bucket": "0.60-0.70",
+      "n": 8,
+      "model_avg": 0.644,
+      "actual_hit_rate": 0.25
+    },
+    {
+      "bucket": "0.70-1.01",
+      "n": 6,
+      "model_avg": 0.792,
+      "actual_hit_rate": 0.667
+    }
+  ],
+  "rows": [
+    {
+      "fixture_id": 1149512,
+      "date": "2024-02-13T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "RB Leipzig",
+      "away": "Real Madrid",
+      "score": {
+        "home": 0,
+        "away": 1
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.1627,
+        "draw": 0.1341,
+        "away": 0.7032
+      },
+      "home_xg": 1.838,
+      "away_xg": 3.879,
+      "btts_yes_pct": 0.8204,
+      "brier": 0.1325
+    },
+    {
+      "fixture_id": 1149510,
+      "date": "2024-02-13T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "FC Copenhagen",
+      "away": "Manchester City",
+      "score": {
+        "home": 1,
+        "away": 3
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.0351,
+        "draw": 0.0694,
+        "away": 0.8955
+      },
+      "home_xg": 0.801,
+      "away_xg": 4.211,
+      "btts_yes_pct": 0.5433,
+      "brier": 0.017
+    },
+    {
+      "fixture_id": 1149514,
+      "date": "2024-02-14T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Paris Saint Germain",
+      "away": "Real Sociedad",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.3484,
+        "draw": 0.2132,
+        "away": 0.4384
+      },
+      "home_xg": 1.564,
+      "away_xg": 1.776,
+      "btts_yes_pct": 0.6646,
+      "brier": 0.6622
+    },
+    {
+      "fixture_id": 1149516,
+      "date": "2024-02-14T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Lazio",
+      "away": "Bayern Munich",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.3163,
+        "draw": 0.2171,
+        "away": 0.4667
+      },
+      "home_xg": 1.419,
+      "away_xg": 1.764,
+      "btts_yes_pct": 0.6368,
+      "brier": 0.7324
+    },
+    {
+      "fixture_id": 1149520,
+      "date": "2024-02-20T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "PSV Eindhoven",
+      "away": "Borussia Dortmund",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "actual": "draw",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.5404,
+        "draw": 0.1742,
+        "away": 0.2854
+      },
+      "home_xg": 2.695,
+      "away_xg": 1.932,
+      "btts_yes_pct": 0.7975,
+      "brier": 1.0554
+    },
+    {
+      "fixture_id": 1149518,
+      "date": "2024-02-20T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Inter",
+      "away": "Atletico Madrid",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.5646,
+        "draw": 0.1917,
+        "away": 0.2437
+      },
+      "home_xg": 2.214,
+      "away_xg": 1.402,
+      "btts_yes_pct": 0.6773,
+      "brier": 0.2857
+    },
+    {
+      "fixture_id": 1149522,
+      "date": "2024-02-21T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "FC Porto",
+      "away": "Arsenal",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.2235,
+        "draw": 0.1997,
+        "away": 0.5768
+      },
+      "home_xg": 1.212,
+      "away_xg": 2.057,
+      "btts_yes_pct": 0.6202,
+      "brier": 0.9755
+    },
+    {
+      "fixture_id": 1149524,
+      "date": "2024-02-21T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Napoli",
+      "away": "Barcelona",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "actual": "draw",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.2743,
+        "draw": 0.1935,
+        "away": 0.5323
+      },
+      "home_xg": 1.531,
+      "away_xg": 2.191,
+      "btts_yes_pct": 0.7013,
+      "brier": 1.009
+    },
+    {
+      "fixture_id": 1149517,
+      "date": "2024-03-05T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Bayern Munich",
+      "away": "Lazio",
+      "score": {
+        "home": 3,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.375,
+        "draw": 0.2079,
+        "away": 0.4171
+      },
+      "home_xg": 1.71,
+      "away_xg": 1.812,
+      "btts_yes_pct": 0.6919,
+      "brier": 0.6078
+    },
+    {
+      "fixture_id": 1149515,
+      "date": "2024-03-05T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Real Sociedad",
+      "away": "Paris Saint Germain",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.3106,
+        "draw": 0.2122,
+        "away": 0.4772
+      },
+      "home_xg": 1.452,
+      "away_xg": 1.843,
+      "btts_yes_pct": 0.6526,
+      "brier": 0.4148
+    },
+    {
+      "fixture_id": 1149511,
+      "date": "2024-03-06T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Manchester City",
+      "away": "FC Copenhagen",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.9664,
+        "draw": 0.0254,
+        "away": 0.0083
+      },
+      "home_xg": 6.132,
+      "away_xg": 0.605,
+      "btts_yes_pct": 0.4528,
+      "brier": 0.0018
+    },
+    {
+      "fixture_id": 1149513,
+      "date": "2024-03-06T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Real Madrid",
+      "away": "RB Leipzig",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "actual": "draw",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.6467,
+        "draw": 0.1499,
+        "away": 0.2034
+      },
+      "home_xg": 3.396,
+      "away_xg": 1.874,
+      "btts_yes_pct": 0.8158,
+      "brier": 1.1823
+    },
+    {
+      "fixture_id": 1149523,
+      "date": "2024-03-12T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Arsenal",
+      "away": "FC Porto",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.3944,
+        "draw": 0.231,
+        "away": 0.3746
+      },
+      "home_xg": 1.482,
+      "away_xg": 1.439,
+      "btts_yes_pct": 0.5998,
+      "brier": 0.5604
+    },
+    {
+      "fixture_id": 1149525,
+      "date": "2024-03-12T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Barcelona",
+      "away": "Napoli",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.4707,
+        "draw": 0.2244,
+        "away": 0.3048
+      },
+      "home_xg": 1.676,
+      "away_xg": 1.308,
+      "btts_yes_pct": 0.6028,
+      "brier": 0.4234
+    },
+    {
+      "fixture_id": 1149521,
+      "date": "2024-03-13T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Borussia Dortmund",
+      "away": "PSV Eindhoven",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.2657,
+        "draw": 0.1816,
+        "away": 0.5527
+      },
+      "home_xg": 1.665,
+      "away_xg": 2.455,
+      "btts_yes_pct": 0.744,
+      "brier": 0.8777
+    },
+    {
+      "fixture_id": 1149519,
+      "date": "2024-03-13T20:00:00+00:00",
+      "round": "Round of 16",
+      "home": "Atletico Madrid",
+      "away": "Inter",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.2113,
+        "draw": 0.1852,
+        "away": 0.6035
+      },
+      "home_xg": 1.299,
+      "away_xg": 2.301,
+      "btts_yes_pct": 0.66,
+      "brier": 1.0206
+    },
+    {
+      "fixture_id": 1184777,
+      "date": "2024-04-09T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Arsenal",
+      "away": "Bayern Munich",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "actual": "draw",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.2316,
+        "draw": 0.2486,
+        "away": 0.5198
+      },
+      "home_xg": 0.888,
+      "away_xg": 1.455,
+      "btts_yes_pct": 0.463,
+      "brier": 0.8884
+    },
+    {
+      "fixture_id": 1184779,
+      "date": "2024-04-09T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Real Madrid",
+      "away": "Manchester City",
+      "score": {
+        "home": 3,
+        "away": 3
+      },
+      "actual": "draw",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.207,
+        "draw": 0.174,
+        "away": 0.619
+      },
+      "home_xg": 1.412,
+      "away_xg": 2.536,
+      "btts_yes_pct": 0.7002,
+      "brier": 1.1083
+    },
+    {
+      "fixture_id": 1184783,
+      "date": "2024-04-10T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Paris Saint Germain",
+      "away": "Barcelona",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "actual": "away",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.5813,
+        "draw": 0.1735,
+        "away": 0.2452
+      },
+      "home_xg": 2.645,
+      "away_xg": 1.68,
+      "btts_yes_pct": 0.7576,
+      "brier": 0.9377
+    },
+    {
+      "fixture_id": 1184781,
+      "date": "2024-04-10T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Atletico Madrid",
+      "away": "Borussia Dortmund",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.6475,
+        "draw": 0.1537,
+        "away": 0.1988
+      },
+      "home_xg": 3.152,
+      "away_xg": 1.711,
+      "btts_yes_pct": 0.7836,
+      "brier": 0.1874
+    },
+    {
+      "fixture_id": 1184782,
+      "date": "2024-04-16T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Borussia Dortmund",
+      "away": "Atletico Madrid",
+      "score": {
+        "home": 4,
+        "away": 2
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.1615,
+        "draw": 0.1392,
+        "away": 0.6993
+      },
+      "home_xg": 1.638,
+      "away_xg": 3.48,
+      "btts_yes_pct": 0.7796,
+      "brier": 1.2115
+    },
+    {
+      "fixture_id": 1184784,
+      "date": "2024-04-16T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Barcelona",
+      "away": "Paris Saint Germain",
+      "score": {
+        "home": 1,
+        "away": 4
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.3349,
+        "draw": 0.1779,
+        "away": 0.4872
+      },
+      "home_xg": 2.13,
+      "away_xg": 2.588,
+      "btts_yes_pct": 0.8144,
+      "brier": 0.4068
+    },
+    {
+      "fixture_id": 1184780,
+      "date": "2024-04-17T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Manchester City",
+      "away": "Real Madrid",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "actual": "draw",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.506,
+        "draw": 0.2244,
+        "away": 0.2696
+      },
+      "home_xg": 1.704,
+      "away_xg": 1.187,
+      "btts_yes_pct": 0.5785,
+      "brier": 0.9303
+    },
+    {
+      "fixture_id": 1184778,
+      "date": "2024-04-17T19:00:00+00:00",
+      "round": "Quarter-finals",
+      "home": "Bayern Munich",
+      "away": "Arsenal",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "home",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.6525,
+        "draw": 0.1839,
+        "away": 0.1635
+      },
+      "home_xg": 2.217,
+      "away_xg": 1.021,
+      "btts_yes_pct": 0.5772,
+      "brier": 0.1813
+    },
+    {
+      "fixture_id": 1196543,
+      "date": "2024-04-30T19:00:00+00:00",
+      "round": "Semi-finals",
+      "home": "Bayern Munich",
+      "away": "Real Madrid",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "actual": "draw",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.716,
+        "draw": 0.1534,
+        "away": 0.1306
+      },
+      "home_xg": 2.697,
+      "away_xg": 1.075,
+      "btts_yes_pct": 0.6184,
+      "brier": 1.2464
+    },
+    {
+      "fixture_id": 1196501,
+      "date": "2024-05-01T19:00:00+00:00",
+      "round": "Semi-finals",
+      "home": "Borussia Dortmund",
+      "away": "Paris Saint Germain",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.1272,
+        "draw": 0.1264,
+        "away": 0.7463
+      },
+      "home_xg": 1.463,
+      "away_xg": 3.627,
+      "btts_yes_pct": 0.7471,
+      "brier": 1.3347
+    },
+    {
+      "fixture_id": 1196502,
+      "date": "2024-05-07T19:00:00+00:00",
+      "round": "Semi-finals",
+      "home": "Paris Saint Germain",
+      "away": "Borussia Dortmund",
+      "score": {
+        "home": 0,
+        "away": 1
+      },
+      "actual": "away",
+      "predicted_winner": "home",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.6147,
+        "draw": 0.1612,
+        "away": 0.2241
+      },
+      "home_xg": 2.996,
+      "away_xg": 1.775,
+      "btts_yes_pct": 0.7885,
+      "brier": 1.0059
+    },
+    {
+      "fixture_id": 1196544,
+      "date": "2024-05-08T19:00:00+00:00",
+      "round": "Semi-finals",
+      "home": "Real Madrid",
+      "away": "Bayern Munich",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "actual": "home",
+      "predicted_winner": "away",
+      "correct_winner": false,
+      "probs": {
+        "home": 0.1764,
+        "draw": 0.1552,
+        "away": 0.6685
+      },
+      "home_xg": 1.461,
+      "away_xg": 2.938,
+      "btts_yes_pct": 0.7287,
+      "brier": 1.1493
+    },
+    {
+      "fixture_id": 1199389,
+      "date": "2024-06-01T19:00:00+00:00",
+      "round": "Final",
+      "home": "Borussia Dortmund",
+      "away": "Real Madrid",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "actual": "away",
+      "predicted_winner": "away",
+      "correct_winner": true,
+      "probs": {
+        "home": 0.1426,
+        "draw": 0.1305,
+        "away": 0.727
+      },
+      "home_xg": 1.6,
+      "away_xg": 3.684,
+      "btts_yes_pct": 0.7764,
+      "brier": 0.1119
+    }
+  ]
+}
