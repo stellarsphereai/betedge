@@ -28,6 +28,7 @@ BOOKS: list[tuple[str, str, str]] = [
     ("espnbet",    "ESPN Bet",   "ESPNBET"),
     ("fanatics",   "Fanatics",   "FANATICS"),
     ("ballybet",   "Bally Bet",  "BALLYBET"),
+    ("betrivers",  "BetRivers",  "BETRIVERS"),
 ]
 
 # Display-name → book_key reverse map (for normalising the `book` field
