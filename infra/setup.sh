@@ -28,6 +28,23 @@ APP_USER="${APP_USER:-betedge}"
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------------------
+log "0/10  Adding 2 GB swap (npm run build is borderline on 1 GB RAM boxes)"
+# ---------------------------------------------------------------------------
+if ! sudo swapon --show | grep -q '/swapfile'; then
+    sudo fallocate -l 2G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile >/dev/null
+    sudo swapon /swapfile
+    if ! grep -q '/swapfile' /etc/fstab; then
+        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+    fi
+fi
+sudo sysctl -w vm.swappiness=10 >/dev/null
+if ! grep -q '^vm.swappiness' /etc/sysctl.conf; then
+    echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf >/dev/null
+fi
+
+# ---------------------------------------------------------------------------
 log "1/10  Installing system packages"
 # ---------------------------------------------------------------------------
 sudo apt-get update -qq
