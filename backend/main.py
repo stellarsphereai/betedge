@@ -1037,8 +1037,10 @@ async def get_best_bets(
     league = (league or "all").lower()
     leagues = LEAGUES_FOR_BEST_BETS if league == "all" else (league,)
 
-    merged: list[dict] = []
-    leagues_seen: set[str] = set()
+    # Dedupe by (match_id, market, market_line, outcome) — /ev-bets can return
+    # the same bet row more than once across its internal market passes; keep
+    # the row with the highest edge.
+    deduped: dict[tuple, dict] = {}
     for lg in leagues:
         try:
             r = await get_ev_bets(bankroll=bankroll, min_edge=min_edge, league=lg)
@@ -1047,13 +1049,18 @@ async def get_best_bets(
         for b in r.get("bets", []) or []:
             if _bet_is_excluded(b):
                 continue
-            # Make sure each row carries the league key (some paths set it,
-            # some don't — be defensive).
             b.setdefault("league", lg)
-            merged.append(b)
-            leagues_seen.add(b["league"])
+            key = (
+                b.get("match_id"),
+                (b.get("market") or "h2h"),
+                b.get("market_line"),
+                b.get("outcome"),
+            )
+            existing = deduped.get(key)
+            if existing is None or (b.get("edge") or 0) > (existing.get("edge") or 0):
+                deduped[key] = b
 
-    merged.sort(key=lambda x: x.get("edge", 0.0), reverse=True)
+    merged = sorted(deduped.values(), key=lambda x: x.get("edge", 0.0), reverse=True)
     top = merged[:limit]
     return {
         "league_filter": league,
