@@ -29,4 +29,21 @@ export const api = {
   markResult: (betId, payload) => post(`/bets/${betId}/mark-result`, payload),
   sendDigest: () => post('/send-digest'),
   digestPreview: () => get('/digest-preview'),
+  portfolioSummary: ({ league, isPaper } = {}) => {
+    const params = new URLSearchParams()
+    if (league) params.set('league', league)
+    if (isPaper != null) params.set('is_paper', isPaper ? 'true' : 'false')
+    const qs = params.toString()
+    return get(`/portfolio/summary${qs ? `?${qs}` : ''}`)
+  },
+  portfolioProjection: ({ matches, stake, edge, betsPerMatch, avgDecimalOdds, startingBankroll }) => {
+    const params = new URLSearchParams()
+    if (matches != null) params.set('matches', matches)
+    if (stake != null) params.set('stake', stake)
+    if (edge != null) params.set('edge', edge)
+    if (betsPerMatch != null) params.set('bets_per_match', betsPerMatch)
+    if (avgDecimalOdds != null) params.set('avg_decimal_odds', avgDecimalOdds)
+    if (startingBankroll != null) params.set('starting_bankroll', startingBankroll)
+    return get(`/portfolio/projection?${params}`)
+  },
 }

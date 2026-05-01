@@ -3,6 +3,7 @@ const TABS = [
   { id: 'ev', label: '+EV only' },
   { id: 'high', label: 'High confidence' },
   { id: 'log', label: 'Paper trade log' },
+  { id: 'portfolio', label: 'Portfolio' },
   { id: 'anomalies', label: 'Anomalies' },
 ]
 

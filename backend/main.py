@@ -964,6 +964,233 @@ async def anomalies_list(limit: int = Query(200, ge=1, le=1000)):
     }
 
 
+# --- Portfolio ---------------------------------------------------------------
+
+def _ev_for_bet(stake: float | None, edge: float | None) -> float:
+    """Expected $ value of a single bet. Edge is fractional (0.06 = 6%)."""
+    if stake is None or edge is None:
+        return 0.0
+    return float(stake) * float(edge)
+
+
+@app.get("/portfolio/summary")
+async def portfolio_summary(
+    league: str | None = None,
+    is_paper: bool | None = None,
+):
+    """Aggregate portfolio metrics across bets_placed.
+
+    Filters: optional league + paper/real. is_paper omitted = both kinds.
+    Returns the four summary cards plus rollups (avg_edge, avg_clv, win_rate)
+    used by the model-health badges.
+    """
+    where = []
+    params: list = []
+    if league:
+        where.append("p.league = ?")
+        params.append(league)
+    if is_paper is not None:
+        where.append("b.is_paper = ?")
+        params.append(1 if is_paper else 0)
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+    with db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT b.id, b.stake, b.odds_at_placement, b.edge_at_placement,
+                   b.status, b.profit, b.clv, b.bet_type, b.market,
+                   b.is_paper, p.league
+            FROM bets_placed b
+            LEFT JOIN model_predictions p ON p.match_id = b.match_id
+            {where_sql}
+            """,
+            tuple(params),
+        ).fetchall()
+    bets = [dict(r) for r in rows]
+
+    total_invested = sum((b["stake"] or 0) for b in bets)
+    open_bets = [b for b in bets if b["status"] == "open"]
+    settled_bets = [b for b in bets if b["status"] in ("won", "lost")]
+    void_bets = [b for b in bets if b["status"] == "void"]
+
+    realized_pnl = sum((b["profit"] or 0) for b in settled_bets)
+    settled_stake = sum((b["stake"] or 0) for b in settled_bets)
+    realized_pct = (realized_pnl / settled_stake) if settled_stake > 0 else 0.0
+
+    expected_pnl = sum(_ev_for_bet(b["stake"], b["edge_at_placement"]) for b in bets)
+
+    # Open-bet outcome range. Best = all open bets win, worst = all lose.
+    open_best = sum(
+        ((b["odds_at_placement"] or 1.0) - 1.0) * (b["stake"] or 0)
+        for b in open_bets
+    )
+    open_worst = -sum((b["stake"] or 0) for b in open_bets)
+
+    starting_bankroll = BANKROLL
+    current_value_best = starting_bankroll + realized_pnl + open_best
+    current_value_worst = starting_bankroll + realized_pnl + open_worst
+
+    edges = [b["edge_at_placement"] for b in bets if b["edge_at_placement"] is not None]
+    clvs = [b["clv"] for b in settled_bets if b["clv"] is not None]
+    won = sum(1 for b in settled_bets if b["status"] == "won")
+    win_rate = (won / len(settled_bets)) if settled_bets else 0.0
+
+    return {
+        "league": league,
+        "is_paper": is_paper,
+        "starting_bankroll": starting_bankroll,
+        "total_invested": round(total_invested, 2),
+        "open_bets_count": len(open_bets),
+        "settled_bets_count": len(settled_bets),
+        "void_bets_count": len(void_bets),
+        "realized_pnl": round(realized_pnl, 2),
+        "realized_pct": round(realized_pct, 4),
+        "expected_pnl": round(expected_pnl, 2),
+        "current_value_best": round(current_value_best, 2),
+        "current_value_worst": round(current_value_worst, 2),
+        "avg_edge": round(sum(edges) / len(edges), 4) if edges else 0.0,
+        "avg_clv": round(sum(clvs) / len(clvs), 4) if clvs else 0.0,
+        "win_rate": round(win_rate, 4),
+        "roi": round(realized_pct, 4),
+    }
+
+
+def _kelly_growth_curve(
+    starting_bankroll: float,
+    edge: float,
+    n_bets: int,
+    kelly_fraction: float,
+    avg_decimal_odds: float = 2.0,
+) -> list[dict]:
+    """Compound bankroll growth assuming a constant edge and constant odds.
+
+    For each bet we stake `f * bankroll` where f = kelly_fraction × Kelly_full
+    and Kelly_full = edge / (b) with b = avg_decimal_odds - 1. Per-bet expected
+    log-growth ≈ f × edge — small-fraction approximation, matches half/full
+    Kelly textbooks closely enough for projection-table purposes.
+    """
+    b = max(0.05, avg_decimal_odds - 1.0)
+    full_kelly = max(0.0, edge / b)
+    f = kelly_fraction * full_kelly
+    r = f * edge  # per-bet compound rate (~edge × f for small f)
+    out = []
+    bankroll = starting_bankroll
+    for n in range(1, n_bets + 1):
+        bankroll = bankroll * (1.0 + r)
+        out.append({"n": n, "bankroll": round(bankroll, 2)})
+    return out
+
+
+@app.get("/portfolio/projection")
+async def portfolio_projection(
+    matches: int = Query(64, ge=1, le=500),
+    stake: float = Query(20.0, ge=1.0, le=10_000.0),
+    edge: float = Query(0.06, ge=0.0, le=0.50),
+    bets_per_match: float = Query(1.5, ge=0.1, le=10.0),
+    avg_decimal_odds: float = Query(2.0, ge=1.05, le=20.0),
+    starting_bankroll: float = Query(1000.0, ge=10.0, le=1_000_000.0),
+):
+    """Projected ROI + Kelly growth + 3 scenarios for the portfolio calculator.
+
+    `edge` is fractional (0.06 = 6%). Best/worst sweep edge ±50%, and the
+    "with variance" worst case bakes in a 60% loss rate to show the downside
+    when the model is wrong despite an apparent edge.
+    """
+    total_bets = int(round(matches * bets_per_match))
+    total_staked = total_bets * stake
+    expected_profit = total_staked * edge
+    expected_roi = edge
+    expected_bankroll = starting_bankroll + expected_profit
+
+    best_case = total_staked * (edge * 1.5)
+    worst_case = total_staked * (edge * 0.5)
+    # Variance-down case: model wrong on 60% of bets despite edge.
+    # Per bet at avg_decimal_odds: win → +stake*(odds-1), lose → -stake.
+    b = avg_decimal_odds - 1.0
+    variance_loss_rate = 0.60
+    variance_pnl = total_bets * (
+        (1 - variance_loss_rate) * stake * b
+        - variance_loss_rate * stake
+    )
+
+    half_kelly = _kelly_growth_curve(starting_bankroll, edge, total_bets, 0.5, avg_decimal_odds)
+    full_kelly = _kelly_growth_curve(starting_bankroll, edge, total_bets, 1.0, avg_decimal_odds)
+
+    # Pick out fixed milestones for the table (capped at total_bets).
+    milestones = [n for n in (20, 40, 64, 100, 200) if n <= total_bets]
+    if total_bets not in milestones and total_bets > 0:
+        milestones.append(total_bets)
+    growth_table = []
+    for n in milestones:
+        full = full_kelly[n - 1]["bankroll"] if n - 1 < len(full_kelly) else None
+        half = half_kelly[n - 1]["bankroll"] if n - 1 < len(half_kelly) else None
+        growth_table.append({
+            "n": n,
+            "full_kelly": full,
+            "half_kelly": half,
+            "full_pct": round((full / starting_bankroll - 1) * 100, 1) if full else None,
+            "half_pct": round((half / starting_bankroll - 1) * 100, 1) if half else None,
+        })
+
+    scenarios = [
+        {
+            "name": "model_works_as_backtested",
+            "label": "Model works as backtested",
+            "win_rate": 0.75,
+            "edge": max(0.04, edge),
+            "roi": round(max(0.04, edge) * (total_staked / starting_bankroll), 4),
+            "expected_profit": round(total_staked * max(0.04, edge), 2),
+            "tone": "good",
+        },
+        {
+            "name": "model_slightly_worse",
+            "label": "Model slightly worse than backtest",
+            "win_rate": 0.62,
+            "edge": max(0.0, edge * 0.66),
+            "roi": round(max(0.0, edge * 0.66) * (total_staked / starting_bankroll), 4),
+            "expected_profit": round(total_staked * max(0.0, edge * 0.66), 2),
+            "tone": "warn",
+        },
+        {
+            "name": "model_underperforms",
+            "label": "Model underperforms",
+            "win_rate": 0.52,
+            "edge": -max(0.005, edge * 0.33),
+            "roi": round(-max(0.005, edge * 0.33) * (total_staked / starting_bankroll), 4),
+            "expected_profit": round(-total_staked * max(0.005, edge * 0.33), 2),
+            "note": "Model needs recalibration",
+            "tone": "bad",
+        },
+    ]
+
+    return {
+        "inputs": {
+            "matches": matches,
+            "stake": stake,
+            "edge": edge,
+            "bets_per_match": bets_per_match,
+            "avg_decimal_odds": avg_decimal_odds,
+            "starting_bankroll": starting_bankroll,
+        },
+        "summary": {
+            "total_bets": total_bets,
+            "total_staked": round(total_staked, 2),
+            "expected_profit": round(expected_profit, 2),
+            "expected_roi": round(expected_roi, 4),
+            "expected_bankroll": round(expected_bankroll, 2),
+            "best_case": round(best_case, 2),
+            "worst_case": round(worst_case, 2),
+            "variance_pnl": round(variance_pnl, 2),
+        },
+        "kelly_growth_table": growth_table,
+        "kelly_curves": {
+            "half_kelly": half_kelly,
+            "full_kelly": full_kelly,
+        },
+        "scenarios": scenarios,
+    }
+
+
 # --- Admin endpoints ----------------------------------------------------------
 # Manual sync controls live only under /admin/* and require Basic auth.
 

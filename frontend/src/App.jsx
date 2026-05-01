@@ -10,6 +10,7 @@ import ModelAccuracyPanel from './components/ModelAccuracyPanel'
 import PaperTradeLog from './components/PaperTradeLog'
 import AnomaliesPanel from './components/AnomaliesPanel'
 import ModelHealthPanel from './components/ModelHealthPanel'
+import PortfolioView from './components/PortfolioView'
 
 export default function App() {
   const [league, setLeague] = useState('epl')
@@ -230,6 +231,8 @@ export default function App() {
 
       {tab === 'log' ? (
         <PaperTradeLog bets={bets} onMarkResult={markBetResult} />
+      ) : tab === 'portfolio' ? (
+        <PortfolioView />
       ) : tab === 'anomalies' ? (
         <AnomaliesPanel anomalies={anomalies} />
       ) : (
