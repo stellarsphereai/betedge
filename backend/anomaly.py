@@ -36,6 +36,17 @@ import league_config
 EDGE_PHANTOM_THRESHOLD = 0.25   # any book — phantom edge gate is league-agnostic
 FORM_DIVERGE_THRESHOLD = 0.40   # 40% relative — same threshold across leagues
 
+# How far the model can drift from the de-vigged book consensus before we
+# treat it as a model error rather than a real edge. Per-league because
+# corpus quality varies — UCL/WC are smaller, sharper markets so we tighten.
+MARKET_CONSENSUS_THRESHOLDS_PP = {
+    "epl":       0.08,
+    "ucl":       0.06,
+    "uel":       0.08,
+    "world_cup": 0.05,
+}
+DEFAULT_MARKET_CONSENSUS_THRESHOLD_PP = 0.08
+
 # Books treated as "sharp" for the divergence check. Match book TITLES the way
 # odds_client emits them (BOOK_TITLE_OVERRIDES + Odds API .title).
 SHARP_BOOK_TITLES = {"FanDuel", "DraftKings"}
@@ -144,6 +155,54 @@ def detect_sharp_divergence(
         edge_shown=bet.get("edge"),
         model_prob=model_p,
         book_implied=book_p,
+    ))
+    return out
+
+
+def detect_market_consensus_divergence(
+    bet: dict,
+    consensus_prob: float | None,
+    league: str | None = None,
+) -> list[Anomaly]:
+    """MARKET_CONSENSUS_DIVERGENCE.
+
+    Catches model-vs-market disagreements where it's not one outlier book —
+    every book agrees and our model is the one out on its own. We compare
+    `model_prob` against the de-vigged average across all books offering
+    this outcome (`consensus_prob`); if the gap exceeds the league's
+    threshold, downgrade to LOW so the bet drops out of /best-bets.
+
+    The `excludes_bet=False` choice is deliberate: we still want the row to
+    show up in the +EV grid with the flag visible, so the user can inspect
+    the disagreement and decide for themselves. Top-3 / digest exclude it
+    via the existing downgrades-to-low filter.
+    """
+    out: list[Anomaly] = []
+    model_p = bet.get("model_prob")
+    if model_p is None or consensus_prob is None:
+        return out
+    threshold = MARKET_CONSENSUS_THRESHOLDS_PP.get(
+        (league or "").lower(), DEFAULT_MARKET_CONSENSUS_THRESHOLD_PP
+    )
+    delta = model_p - consensus_prob
+    if abs(delta) <= threshold:
+        return out
+    direction = "above" if delta > 0 else "below"
+    out.append(Anomaly(
+        anomaly_type="MARKET_CONSENSUS_DIVERGENCE",
+        description=(
+            f"Model {model_p * 100:.1f}% vs market consensus {consensus_prob * 100:.1f}% "
+            f"({delta * 100:+.1f}pp gap, {direction} consensus) — exceeds the "
+            f"{(league or 'default').upper()} threshold of {threshold * 100:.0f}pp. "
+            f"Whole market disagrees with the model on this outcome."
+        ),
+        match_id=bet.get("match_id", ""),
+        home_team=bet.get("home_team", ""),
+        away_team=bet.get("away_team", ""),
+        edge_shown=bet.get("edge"),
+        model_prob=model_p,
+        book_implied=consensus_prob,
+        downgrades_to_low=True,  # excluded from top 3 / digest, still visible in grid
     ))
     return out
 

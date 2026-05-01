@@ -515,16 +515,20 @@ async def get_ev_bets(
             else:
                 stake = kelly_stake_full
 
+            # De-vigged market consensus across all books — used both for
+            # the WC market-agreement gate and for the new
+            # MARKET_CONSENSUS_DIVERGENCE anomaly.
+            avg = _devig_avg_for_offers(offers)
+            consensus_prob = (avg or {}).get(b.outcome) if avg else None
+
             # Market-agreement gate (WC): drop bets where the model's pick
             # disagrees with the de-vigged market consensus on direction —
             # books are sharper than us on this corpus, so a hard disagreement
             # is more likely a model error than an inefficiency.
-            if risk["require_market_agreement"]:
-                avg = _devig_avg_for_offers(offers)
-                if avg:
-                    market_pick = max(avg, key=avg.get)
-                    if market_pick != b.outcome:
-                        continue
+            if risk["require_market_agreement"] and avg:
+                market_pick = max(avg, key=avg.get)
+                if market_pick != b.outcome:
+                    continue
 
             row = {
                 **b.__dict__,
@@ -550,6 +554,7 @@ async def get_ev_bets(
             bet_flags: list[anomaly.Anomaly] = []
             bet_flags += anomaly.detect_edge_anomalies(row, league=league)
             bet_flags += anomaly.detect_sharp_divergence(row, match_consensus=None, league=league)
+            bet_flags += anomaly.detect_market_consensus_divergence(row, consensus_prob, league=league)
             anomaly_excluded = any(f.excludes_bet for f in bet_flags)
             anomaly_downgrade = any(f.downgrades_to_low for f in bet_flags)
             if anomaly_downgrade:
