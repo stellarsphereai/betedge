@@ -686,6 +686,8 @@ async def list_bets(status: str | None = None, limit: int = Query(100, ge=1, le=
                f.result      AS fixture_result,
                f.home_goals  AS fixture_home_goals,
                f.away_goals  AS fixture_away_goals,
+               p.kickoff_time AS match_kickoff,
+               p.league       AS match_league,
                p.home_win_pct, p.draw_pct, p.away_win_pct,
                p.btts_yes_pct, p.score_matrix_json
         FROM bets_placed b

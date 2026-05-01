@@ -170,7 +170,8 @@ function BetTable({ bets, league, market, status, dateFrom }) {
         <table className="w-full text-xs">
           <thead className="bg-ink-800">
             <tr>
-              <Th col="timestamp">Date</Th>
+              <Th col="timestamp">Placed</Th>
+              <Th col="match_kickoff">Kickoff</Th>
               <Th col="home_team">Match</Th>
               <Th col="market">Market</Th>
               <Th col="bet_type">Outcome</Th>
@@ -197,6 +198,9 @@ function BetTable({ bets, league, market, status, dateFrom }) {
               return (
                 <tr key={b.id} className="border-t border-ink-800 hover:bg-ink-800/50">
                   <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{fmtDate(b.timestamp)}</td>
+                  <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">
+                    {b.match_kickoff ? fmtDate(b.match_kickoff) : <span className="text-slate-600">—</span>}
+                  </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <div className="text-slate-200">{b.home_team}</div>
                     <div className="text-slate-500 text-[10px]">vs {b.away_team}</div>
@@ -522,7 +526,7 @@ function KellyProjectionPanel({ projection, startingBankroll }) {
 
 function exportCSV(bets) {
   const headers = [
-    'Date', 'Match', 'League', 'Market', 'Outcome', 'Book',
+    'Bet Placed', 'Match Kickoff', 'Match', 'League', 'Market', 'Outcome', 'Book',
     'Decimal Odds', 'American Odds', 'Stake', 'Edge', 'EV',
     'Model Probability', 'Book Implied', 'Status', 'Result',
     'P&L', 'CLV', 'Confidence', 'Anomaly Flagged',
@@ -538,8 +542,9 @@ function exportCSV(bets) {
     const implied = impliedFromOdds(b.odds_at_placement)
     return [
       b.timestamp,
+      b.match_kickoff || '',
       `${b.home_team} vs ${b.away_team}`,
-      b.league || '',
+      b.league || b.match_league || '',
       b.market || 'h2h',
       betLabel(b),
       b.book,
