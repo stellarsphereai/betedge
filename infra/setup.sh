@@ -192,7 +192,7 @@ sudo tee /etc/caddy/Caddyfile >/dev/null <<CADDY
     # API routes proxied to FastAPI on 127.0.0.1:8002.
     # Caddy's named matchers only honor the LAST 'path' directive, so all
     # patterns must be on a single line.
-    @api path /predictions* /ev-bets* /bets /bets/* /stats* /fixtures* /run-model /digest-preview /send-digest /backtest* /sync-data* /quota /scheduler* /anomalies* /model-health* /league-config*
+    @api path /predictions* /ev-bets* /bets /bets/* /stats* /fixtures* /run-model /digest-preview /send-digest /backtest* /sync-data* /quota /scheduler* /anomalies* /model-health* /league-config* /portfolio*
     handle @api {
         reverse_proxy 127.0.0.1:8002
     }
