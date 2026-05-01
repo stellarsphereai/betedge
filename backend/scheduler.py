@@ -220,11 +220,10 @@ def build() -> AsyncIOScheduler:
     schedule = [
         ("sync_epl",         _league_sync_job("epl"),       CronTrigger(hour=0,  minute=0,  timezone=TIMEZONE)),
         # UCL games are played Tue/Wed (matchdays) — only sync those mornings.
-        # The Final falls on a Sunday; run an early-Sunday sync so day-of EV
-        # has fresh data before kickoff. Other Sundays this is a near no-op
-        # (cache hits, no fixtures), so the extra cost is negligible.
-        ("sync_ucl",         _league_sync_job("ucl"),       CronTrigger(day_of_week="tue,wed", hour=1,  minute=0,  timezone=TIMEZONE)),
-        ("sync_ucl_final",   _league_sync_job("ucl"),       CronTrigger(day_of_week="sun",     hour=5,  minute=0,  timezone=TIMEZONE)),
+        # The Final is a fixed date (Sat 2026-05-30 in Budapest); a one-shot
+        # cron at 00:00 NY-local on that date pulls fresh data the morning of.
+        ("sync_ucl",         _league_sync_job("ucl"),       CronTrigger(day_of_week="tue,wed", hour=1, minute=0, timezone=TIMEZONE)),
+        ("sync_ucl_final",   _league_sync_job("ucl"),       CronTrigger(year=2026, month=5, day=30, hour=0, minute=0, timezone=TIMEZONE)),
         ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
         ("sync_world_cup",   _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
