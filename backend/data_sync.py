@@ -309,6 +309,13 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             ))
             anomaly_flagged_int = 1 if flags else 0
             import json as _json
+            # Per-team form snapshot — same numbers fed to predict() so the
+            # AI analysis + bias detection don't have to re-fetch from the
+            # API. Weighted attack/defense are recomputed here from the same
+            # arrays + game_weights so they stay consistent with what the
+            # model actually saw.
+            home_atk, home_def = model.team_strengths(home_form, model_params)
+            away_atk, away_def = model.team_strengths(away_form, model_params)
             with db() as conn:
                 conn.execute(
                     """
@@ -316,26 +323,51 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                         (match_id, home_team, away_team, league, kickoff_time,
                          home_win_pct, draw_pct, away_win_pct, btts_yes_pct,
                          home_xg, away_xg, confidence, score_matrix_json,
-                         penalties_json, gamma_used, season_blend_used, anomaly_flagged)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         penalties_json, gamma_used, season_blend_used, anomaly_flagged,
+                         home_games_xg_for, home_games_xg_against,
+                         away_games_xg_for, away_games_xg_against,
+                         home_attack_weighted, home_defense_weighted,
+                         away_attack_weighted, away_defense_weighted,
+                         home_rest_days, away_rest_days,
+                         home_penalties_applied, away_penalties_applied,
+                         home_season_avg_for, home_season_avg_against,
+                         away_season_avg_for, away_season_avg_against)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(match_id) DO UPDATE SET
-                        home_team         = excluded.home_team,
-                        away_team         = excluded.away_team,
-                        league            = excluded.league,
-                        kickoff_time      = excluded.kickoff_time,
-                        home_win_pct      = excluded.home_win_pct,
-                        draw_pct          = excluded.draw_pct,
-                        away_win_pct      = excluded.away_win_pct,
-                        btts_yes_pct      = excluded.btts_yes_pct,
-                        home_xg           = excluded.home_xg,
-                        away_xg           = excluded.away_xg,
-                        confidence        = excluded.confidence,
-                        score_matrix_json = excluded.score_matrix_json,
-                        penalties_json    = excluded.penalties_json,
-                        gamma_used        = excluded.gamma_used,
-                        season_blend_used = excluded.season_blend_used,
-                        anomaly_flagged   = excluded.anomaly_flagged,
-                        created_at        = datetime('now')
+                        home_team               = excluded.home_team,
+                        away_team               = excluded.away_team,
+                        league                  = excluded.league,
+                        kickoff_time            = excluded.kickoff_time,
+                        home_win_pct            = excluded.home_win_pct,
+                        draw_pct                = excluded.draw_pct,
+                        away_win_pct            = excluded.away_win_pct,
+                        btts_yes_pct            = excluded.btts_yes_pct,
+                        home_xg                 = excluded.home_xg,
+                        away_xg                 = excluded.away_xg,
+                        confidence              = excluded.confidence,
+                        score_matrix_json       = excluded.score_matrix_json,
+                        penalties_json          = excluded.penalties_json,
+                        gamma_used              = excluded.gamma_used,
+                        season_blend_used       = excluded.season_blend_used,
+                        anomaly_flagged         = excluded.anomaly_flagged,
+                        home_games_xg_for       = excluded.home_games_xg_for,
+                        home_games_xg_against   = excluded.home_games_xg_against,
+                        away_games_xg_for       = excluded.away_games_xg_for,
+                        away_games_xg_against   = excluded.away_games_xg_against,
+                        home_attack_weighted    = excluded.home_attack_weighted,
+                        home_defense_weighted   = excluded.home_defense_weighted,
+                        away_attack_weighted    = excluded.away_attack_weighted,
+                        away_defense_weighted   = excluded.away_defense_weighted,
+                        home_rest_days          = excluded.home_rest_days,
+                        away_rest_days          = excluded.away_rest_days,
+                        home_penalties_applied  = excluded.home_penalties_applied,
+                        away_penalties_applied  = excluded.away_penalties_applied,
+                        home_season_avg_for     = excluded.home_season_avg_for,
+                        home_season_avg_against = excluded.home_season_avg_against,
+                        away_season_avg_for     = excluded.away_season_avg_for,
+                        away_season_avg_against = excluded.away_season_avg_against,
+                        created_at              = datetime('now')
                     """,
                     (match_id, home_form.name, away_form.name, league, kickoff_iso,
                      prediction.home_win_pct, prediction.draw_pct, prediction.away_win_pct,
@@ -345,7 +377,18 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                      _json.dumps(penalties_combined),
                      model_params.home_gamma,
                      model_params.season_blend,
-                     anomaly_flagged_int),
+                     anomaly_flagged_int,
+                     _json.dumps(home_form.xg_for),
+                     _json.dumps(home_form.xg_against),
+                     _json.dumps(away_form.xg_for),
+                     _json.dumps(away_form.xg_against),
+                     round(home_atk, 4), round(home_def, 4),
+                     round(away_atk, 4), round(away_def, 4),
+                     home_form.rest_days, away_form.rest_days,
+                     _json.dumps(prediction.home_penalties_applied),
+                     _json.dumps(prediction.away_penalties_applied),
+                     home_form.season_avg_for, home_form.season_avg_against,
+                     away_form.season_avg_for, away_form.season_avg_against),
                 )
             summary["predictions_upserted"] += 1
 

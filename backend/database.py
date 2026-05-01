@@ -300,6 +300,26 @@ def init_db(path: str | None = None) -> None:
         _add_column_if_missing(conn, "model_predictions", "gamma_used", "REAL")
         _add_column_if_missing(conn, "model_predictions", "season_blend_used", "REAL")
         _add_column_if_missing(conn, "model_predictions", "anomaly_flagged", "INTEGER DEFAULT 0")
+        # Per-team form snapshot — JSON arrays of last-N xG values + the
+        # weighted attack/defense numbers fed to predict(). Captured at
+        # prediction time so AI analysis + bias detection don't need to
+        # re-fetch from API-Football. NULL on rows from before this migration.
+        _add_column_if_missing(conn, "model_predictions", "home_games_xg_for", "TEXT")
+        _add_column_if_missing(conn, "model_predictions", "home_games_xg_against", "TEXT")
+        _add_column_if_missing(conn, "model_predictions", "away_games_xg_for", "TEXT")
+        _add_column_if_missing(conn, "model_predictions", "away_games_xg_against", "TEXT")
+        _add_column_if_missing(conn, "model_predictions", "home_attack_weighted", "REAL")
+        _add_column_if_missing(conn, "model_predictions", "home_defense_weighted", "REAL")
+        _add_column_if_missing(conn, "model_predictions", "away_attack_weighted", "REAL")
+        _add_column_if_missing(conn, "model_predictions", "away_defense_weighted", "REAL")
+        _add_column_if_missing(conn, "model_predictions", "home_rest_days", "INTEGER")
+        _add_column_if_missing(conn, "model_predictions", "away_rest_days", "INTEGER")
+        _add_column_if_missing(conn, "model_predictions", "home_penalties_applied", "TEXT")
+        _add_column_if_missing(conn, "model_predictions", "away_penalties_applied", "TEXT")
+        _add_column_if_missing(conn, "model_predictions", "home_season_avg_for", "REAL")
+        _add_column_if_missing(conn, "model_predictions", "home_season_avg_against", "REAL")
+        _add_column_if_missing(conn, "model_predictions", "away_season_avg_for", "REAL")
+        _add_column_if_missing(conn, "model_predictions", "away_season_avg_against", "REAL")
         # Seed league_config with defaults if rows are missing. Existing rows
         # are left alone so manual edits via the table aren't clobbered.
         _seed_league_config(conn)

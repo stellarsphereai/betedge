@@ -183,9 +183,32 @@ def _build_user_prompt(prediction: dict, anomalies: list[dict]) -> str:
     away_xg = p.get("away_xg") or 0.0
     total_xg = home_xg + away_xg
 
+    def _arr(field: str) -> str:
+        raw = p.get(field)
+        if not raw:
+            return "(not stored — older prediction; will be available after next sync)"
+        try:
+            arr = json.loads(raw)
+        except Exception:
+            return "(unparseable)"
+        return ", ".join(f"{x:.2f}" for x in arr) if arr else "(empty)"
+
+    def _per_side_pens(field: str) -> str:
+        raw = p.get(field)
+        if not raw:
+            return "none"
+        try:
+            arr = json.loads(raw)
+        except Exception:
+            return "none"
+        return ", ".join(arr) if arr else "none"
+
+    home = p.get("home_team")
+    away = p.get("away_team")
+
     return (
         f"Analyze this match prediction:\n\n"
-        f"Match: {p.get('home_team')} vs {p.get('away_team')}\n"
+        f"Match: {home} vs {away}\n"
         f"League: {(p.get('league') or 'unknown').upper()}\n"
         f"Kickoff: {p.get('kickoff_time')}\n\n"
         f"MODEL OUTPUT:\n"
@@ -197,17 +220,30 @@ def _build_user_prompt(prediction: dict, anomalies: list[dict]) -> str:
         f"Away xG: {away_xg:.2f}\n"
         f"Total xG: {total_xg:.2f}  (league avg ≈ {league_avg * 2:.2f} per match)\n"
         f"Confidence: {p.get('confidence') or 'UNKNOWN'}\n\n"
+        f"HOME TEAM — {home}:\n"
+        f"Last 10 xG for (most recent first): {_arr('home_games_xg_for')}\n"
+        f"Last 10 xG against:                  {_arr('home_games_xg_against')}\n"
+        f"Weighted attack:  {p.get('home_attack_weighted')}\n"
+        f"Weighted defense: {p.get('home_defense_weighted')}\n"
+        f"Season avg xG for / against: {p.get('home_season_avg_for')} / "
+        f"{p.get('home_season_avg_against')}\n"
+        f"Rest days: {p.get('home_rest_days')}\n"
+        f"Penalties applied: {_per_side_pens('home_penalties_applied')}\n\n"
+        f"AWAY TEAM — {away}:\n"
+        f"Last 10 xG for (most recent first): {_arr('away_games_xg_for')}\n"
+        f"Last 10 xG against:                  {_arr('away_games_xg_against')}\n"
+        f"Weighted attack:  {p.get('away_attack_weighted')}\n"
+        f"Weighted defense: {p.get('away_defense_weighted')}\n"
+        f"Season avg xG for / against: {p.get('away_season_avg_for')} / "
+        f"{p.get('away_season_avg_against')}\n"
+        f"Rest days: {p.get('away_rest_days')}\n"
+        f"Penalties applied: {_per_side_pens('away_penalties_applied')}\n\n"
         f"MODEL ADJUSTMENTS:\n"
         f"Gamma (home-field) applied: {p.get('gamma_used')}\n"
-        f"Penalties: {penalties_str}\n"
+        f"Combined penalties this match: {penalties_str}\n"
         f"Season blend (recent vs season avg): {p.get('season_blend_used')}\n"
         f"League-avg goals per team per game: {league_avg}\n\n"
         f"ANOMALIES DETECTED IN PIPELINE:\n{anom_str}\n\n"
-        f"Note: Per-team form details (last-10 xG, attack/defense ratings, rest "
-        f"days, injuries, season averages) are not exposed in the stored "
-        f"prediction record. Work with the model output, gamma/penalty/blend "
-        f"choices, and pipeline anomalies above. If a concern requires the "
-        f"missing detail to confirm, say so plainly.\n\n"
         f"Write your entire response as if explaining to someone who has "
         f"never placed a sports bet before. Use simple words. Be direct. "
         f"Give clear verdicts. Never use technical jargon without immediately "
