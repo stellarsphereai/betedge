@@ -79,11 +79,14 @@ export default function App() {
       return t >= now - KICKOFF_WINDOW_PAST_MS && t <= now + futureMs
     }
 
-    // Set of (match_id, market, line, outcome) for paper bets already placed.
-    // Drives the "hide rows I've already logged" filter below.
+    // Set of (match_id, market, line, outcome) for OPEN bets already logged
+    // — paper or cash, doesn't matter. Once a bet has been recorded in the
+    // trade log, it shouldn't keep nagging the user from the main +EV grid.
+    // Settled bets (won/lost/void) are not included so a future bet on the
+    // same matchup-after-results would still be actionable.
     const placedKeys = new Set()
     for (const b of bets || []) {
-      if (!b.is_paper) continue
+      if (b.status !== 'open') continue
       const k = `${b.match_id}|${b.market || 'h2h'}|${b.market_line ?? ''}|${b.bet_type}`
       placedKeys.add(k)
     }
