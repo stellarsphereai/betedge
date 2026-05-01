@@ -1,69 +1,62 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 
-// Section names emitted by the system prompt — order is significant.
+// Section keys match the headings emitted by the system prompt (without
+// the leading emoji). Order here is the display order.
 const SECTIONS = [
-  { key: 'TEAM FORM',     label: 'Team form' },
-  { key: 'XG ANALYSIS',   label: 'xG analysis' },
-  { key: 'MODEL INPUTS',  label: 'Model inputs' },
-  { key: 'BET VERDICTS',  label: 'Bet verdicts' },
-  { key: 'ANOMALY FLAGS', label: 'Anomaly flags' },
-  { key: 'FINAL VERDICT', label: 'Final verdict' },
+  { key: 'QUICK SUMMARY',          label: '🔍 Quick summary' },
+  { key: 'WHAT THE MODEL SEES',    label: '⚽ What the model sees' },
+  { key: 'DO THE NUMBERS MAKE SENSE', label: '🔢 Do the numbers make sense?' },
+  { key: 'BET BY BET VERDICT',     label: '✅ Bet by bet verdict' },
+  { key: 'PROBLEMS FOUND',         label: '🚨 Problems found' },
+  { key: 'FINAL VERDICT',          label: '🎯 Final verdict' },
 ]
 
+// Line-based parser. A header line is one that contains a section key and is
+// short enough to be a heading (not a paragraph that happens to mention the
+// phrase). Tolerates emoji prefixes, markdown, and trailing parentheticals.
 function parseSections(text) {
-  const map = {}
-  if (!text) return map
-  const positions = []
-  for (const s of SECTIONS) {
-    const re = new RegExp(`(^|\\n)\\s*${s.key.replace(/ /g, '[ /]')}\\s*:?`, 'i')
-    const match = re.exec(text)
-    if (match) positions.push({ key: s.key, start: match.index + match[0].length })
+  if (!text) return {}
+  const lines = text.split('\n')
+  const result = {}
+  let currentKey = null
+  let buffer = []
+  const flush = () => {
+    if (currentKey && !result[currentKey]) {
+      result[currentKey] = buffer.join('\n').trim()
+    }
   }
-  positions.sort((a, b) => a.start - b.start)
-  for (let i = 0; i < positions.length; i++) {
-    const start = positions[i].start
-    const end = i + 1 < positions.length ? positions[i + 1].start - SECTIONS.find(s => s.key === positions[i + 1].key).key.length - 2 : text.length
-    map[positions[i].key] = text.slice(start, Math.max(start, end)).trim()
+  for (const line of lines) {
+    const upper = line.toUpperCase()
+    // Strip leading non-word chars (emojis, *, #, whitespace) before matching.
+    const stripped = upper.replace(/^[^A-Z0-9]+/, '')
+    let matched = null
+    for (const s of SECTIONS) {
+      if (stripped.startsWith(s.key)) {
+        // Heading-like: line is short or the rest is just punctuation/parens.
+        const rest = line.slice(line.toUpperCase().indexOf(s.key) + s.key.length).trim()
+        if (rest.length <= 60) {
+          matched = s.key
+          break
+        }
+      }
+    }
+    if (matched) {
+      flush()
+      currentKey = matched
+      buffer = []
+    } else if (currentKey) {
+      buffer.push(line)
+    }
   }
-  return map
+  flush()
+  return result
 }
 
-function flagTone(line) {
-  const upper = line.toUpperCase()
-  if (upper.includes('CRITICAL')) return { tone: 'bad', icon: '🚨' }
-  if (upper.includes('WARNING')) return { tone: 'warn', icon: '⚠️' }
-  if (upper.includes('INFO')) return { tone: 'accent', icon: 'ℹ️' }
-  return { tone: 'neutral', icon: '•' }
-}
-
-function AnomalyFlagsBlock({ text }) {
-  if (!text) return <div className="text-slate-500 text-xs">None.</div>
-  const lines = text.split('\n').map(s => s.trim()).filter(Boolean)
-  return (
-    <div className="space-y-1.5">
-      {lines.map((line, i) => {
-        const { tone, icon } = flagTone(line)
-        const cls = {
-          bad: 'bg-bad-soft text-bad border-bad-soft',
-          warn: 'bg-warn-soft text-warn border-warn-soft',
-          accent: 'bg-accent-soft text-accent border-accent-soft',
-          neutral: 'border-ink-700 text-slate-300',
-        }[tone]
-        return (
-          <div key={i} className={`flex gap-2 text-xs px-2 py-1.5 rounded border ${cls}`}>
-            <span>{icon}</span>
-            <span className="flex-1">{line.replace(/^[-•]\s*/, '')}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function CopyToClaudeCodeBox({ text, matchLabel }) {
+function CopyToClaudeCodeBox({ problemText, matchLabel, onSkip }) {
   const [copied, setCopied] = useState(false)
-  const instruction = `Claude flagged a critical issue in the BetEdge model for "${matchLabel}". Investigate and fix.\n\nClaude's analysis:\n${text}`
+  const [hidden, setHidden] = useState(false)
+  const instruction = `BetEdge model issue flagged for "${matchLabel}":\n\n${problemText}\n\nInvestigate the cause and fix it.`
   async function copy() {
     try {
       await navigator.clipboard.writeText(instruction)
@@ -71,11 +64,16 @@ function CopyToClaudeCodeBox({ text, matchLabel }) {
       setTimeout(() => setCopied(false), 2000)
     } catch { /* noop */ }
   }
+  function skip() {
+    setHidden(true)
+    onSkip?.()
+  }
+  if (hidden) return null
   return (
     <div className="mt-3 rounded-md border border-bad-soft bg-bad-soft/40 p-3">
-      <div className="text-xs font-semibold text-bad mb-2">🚨 Critical issue flagged by Claude</div>
+      <div className="text-xs font-semibold text-bad mb-2">🚨 Issue flagged — Fix this?</div>
       <div className="text-[11px] text-slate-300 mb-2">
-        Copy the instruction below and paste into Claude Code to investigate / fix.
+        Copy the instruction and paste it into Claude Code to investigate and fix.
       </div>
       <pre className="text-[11px] bg-ink-950 text-slate-200 p-2 rounded max-h-48 overflow-auto whitespace-pre-wrap">{instruction}</pre>
       <div className="flex gap-2 mt-2">
@@ -83,7 +81,13 @@ function CopyToClaudeCodeBox({ text, matchLabel }) {
           onClick={copy}
           className="px-3 py-1 rounded text-xs font-medium bg-bad text-white hover:opacity-90"
         >
-          {copied ? '✓ Copied' : 'Copy for Claude Code'}
+          {copied ? '✓ Copied — paste into Claude Code' : 'Yes — fix it'}
+        </button>
+        <button
+          onClick={skip}
+          className="px-3 py-1 rounded text-xs font-medium bg-ink-800 text-slate-300 hover:bg-ink-700 border border-ink-700"
+        >
+          Skip
         </button>
       </div>
     </div>
@@ -151,24 +155,32 @@ export default function MatchAnalysisPanel({ matchId, matchLabel, onClose }) {
 
       {data && !loading && (
         <>
-          {data.critical_flags && (
-            <CopyToClaudeCodeBox text={data.analysis_text} matchLabel={matchLabel} />
+          {data.critical_flags && sections['PROBLEMS FOUND'] && (
+            <CopyToClaudeCodeBox
+              problemText={sections['PROBLEMS FOUND'].replace(/Fix this issue\?[^\n]*/i, '').trim()}
+              matchLabel={matchLabel}
+            />
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
             {SECTIONS.map(s => {
               const body = sections[s.key]
               if (!body) return null
-              const isAnomaly = s.key === 'ANOMALY FLAGS'
+              const isProblems = s.key === 'PROBLEMS FOUND'
+              const isFinal = s.key === 'FINAL VERDICT'
+              const isWide = isFinal || isProblems || s.key === 'QUICK SUMMARY'
+              const cleanedBody = isProblems
+                ? body.replace(/Fix this issue\?[^\n]*/i, '').trim()
+                : body
               return (
                 <div
                   key={s.key}
-                  className={`rounded-md border border-ink-700 bg-ink-950/60 p-3 ${s.key === 'FINAL VERDICT' ? 'md:col-span-2' : ''}`}
+                  className={`rounded-md border p-3 ${
+                    isProblems ? 'border-bad-soft bg-bad-soft/20' : 'border-ink-700 bg-ink-950/60'
+                  } ${isWide ? 'md:col-span-2' : ''}`}
                 >
                   <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</div>
-                  {isAnomaly
-                    ? <AnomalyFlagsBlock text={body} />
-                    : <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">{body}</div>}
+                  <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">{cleanedBody}</div>
                 </div>
               )
             })}

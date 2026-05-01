@@ -38,29 +38,53 @@ INPUT_PRICE_PER_M = 1.0             # USD per 1M tokens
 OUTPUT_PRICE_PER_M = 5.0
 
 SYSTEM_PROMPT = (
-    "You are an expert soccer betting analyst reviewing a prediction from a "
-    "Poisson model. Your job is to:\n"
-    "1. Explain the prediction in plain English\n"
-    "2. Validate whether the inputs make sense\n"
-    "3. Flag any anomalies or concerns\n"
-    "4. Give an honest verdict on each bet\n"
-    "5. Be direct and concise — no fluff\n\n"
-    "Always structure your response in these exact sections, each on its "
-    "own line and prefixed with the section name in CAPS followed by a colon. "
-    "Section names must appear verbatim:\n"
-    "TEAM FORM:\n"
-    "XG ANALYSIS:\n"
-    "MODEL INPUTS:\n"
-    "BET VERDICTS:\n"
-    "ANOMALY FLAGS:\n"
-    "FINAL VERDICT:\n\n"
-    "In the ANOMALY FLAGS section, prefix each flag with one of these "
-    "exact tokens so the UI can color-code:\n"
-    "- 'CRITICAL' for an issue that should halt betting on this match\n"
-    "- 'WARNING' for something to monitor\n"
-    "- 'INFO' for context worth noting\n"
-    "Use 'CRITICAL' sparingly — only for genuine model issues, not minor "
-    "data gaps."
+    "You are a sports betting assistant explaining match predictions to a "
+    "complete beginner.\n\n"
+    "Your job is to explain everything in plain English — no jargon, no "
+    "technical terms, no assumptions about knowledge.\n\n"
+    "Rules you must follow:\n"
+    "- Never use words like: asymmetric, pipeline, suppression, anchored, "
+    "defensible, jibes, compressed\n"
+    "- Always explain what something means immediately after saying it\n"
+    "- Use concrete dollar amounts and percentages — never abstract concepts\n"
+    "- Write like you are texting a smart friend who knows nothing about "
+    "betting models\n"
+    "- Be direct — say exactly what to do and why in plain English\n"
+    "- Maximum 2 sentences per point\n"
+    "- Use simple comparisons and analogies\n\n"
+    "Use this exact structure, with the headings (including emoji) on their "
+    "own line:\n\n"
+    "🔍 QUICK SUMMARY (3 sentences max)\n"
+    "What this match looks like in plain English. What the model thinks "
+    "will happen. Whether this match is worth betting on — yes or no.\n\n"
+    "⚽ WHAT THE MODEL SEES\n"
+    "Plain English explanation of both teams. Recent form in simple terms — "
+    "\"Brighton have been scoring a lot lately\" not \"Brighton's weighted xG "
+    "shows elevated attack strength\". Expected goals explained simply — "
+    "\"The model expects United to create enough chances to score about 1.6 "
+    "goals. Liverpool about 1.5 goals. So a tight, close match.\"\n\n"
+    "🔢 DO THE NUMBERS MAKE SENSE?\n"
+    "Compare model probability to what the book is offering in plain "
+    "English. Flag if any number looks too high or too low with a simple "
+    "explanation why. Show the break-even point for each bet in plain "
+    "language: \"At -152 odds you need this to happen more than 60% of the "
+    "time to profit. The model says 61.8%. Thin margin.\"\n\n"
+    "✅ BET BY BET VERDICT\n"
+    "For each bet show exactly:\n\n"
+    "[Market] — [Outcome] — [Book] — [Odds]\n"
+    "One sentence: what needs to happen for this bet to win\n"
+    "One sentence: why the model likes it\n"
+    "One sentence: any concern to watch out for\n"
+    "VERDICT: BET IT / SKIP IT / CAUTION\n\n"
+    "🚨 PROBLEMS FOUND (only include this section if issues exist)\n"
+    "Explain the problem in plain English like you are explaining to a "
+    "friend. Then say clearly what it means for the bets. End with the "
+    "literal text: \"Fix this issue? [Yes fix it] [Skip]\"\n\n"
+    "🎯 FINAL VERDICT\n"
+    "Three lines maximum:\n"
+    "Best bet: [specific bet] because [one reason]\n"
+    "Skip: [specific bet] because [one reason]\n"
+    "Overall: [one sentence on whether to bet this match at all]"
 )
 
 
@@ -158,20 +182,28 @@ def _build_user_prompt(prediction: dict, anomalies: list[dict]) -> str:
         f"ANOMALIES DETECTED IN PIPELINE:\n{anom_str}\n\n"
         f"Note: Per-team form details (last-10 xG, attack/defense ratings, rest "
         f"days, injuries, season averages) are not exposed in the stored "
-        f"prediction record. Analyze based on the model output, gamma/penalty/"
-        f"blend choices, and pipeline anomalies above. If you'd flag a concern "
-        f"that requires the missing detail to confirm, say so explicitly.\n\n"
-        f"Explain this prediction. Validate the math. Flag anything that "
-        f"warrants concern. Give a verdict on the match overall and on "
-        f"betting it. Be honest about what the data here can and cannot tell us."
+        f"prediction record. Work with the model output, gamma/penalty/blend "
+        f"choices, and pipeline anomalies above. If a concern requires the "
+        f"missing detail to confirm, say so plainly.\n\n"
+        f"Write your entire response as if explaining to someone who has "
+        f"never placed a sports bet before. Use simple words. Be direct. "
+        f"Give clear verdicts. Never use technical jargon without immediately "
+        f"explaining it in brackets.\n"
+        f"Example of good writing:\n"
+        f"  \"United have a fatigue penalty applied (meaning the model thinks "
+        f"they will perform slightly worse because they played recently with "
+        f"less rest time)\"\n"
+        f"Example of bad writing:\n"
+        f"  \"Rest fatigue penalty suppresses United attack strength "
+        f"asymmetrically\""
     )
 
 
 def _has_critical_flag(text: str) -> bool:
-    """The model is instructed to use the literal token CRITICAL only for
-    genuine model issues. Substring match is good enough — we tolerate
-    stylistic mentions; the user can always click through."""
-    return "CRITICAL" in (text or "")
+    """The new prompt only includes the 'PROBLEMS FOUND' section when issues
+    exist, so its presence is the signal. Substring match is good enough —
+    false positives just show the user a (harmless) fix-button banner."""
+    return "PROBLEMS FOUND" in (text or "").upper()
 
 
 # --- main entry --------------------------------------------------------------
@@ -252,7 +284,7 @@ async def analyze_match(match_id: str, force: bool = False) -> dict:
     output_tokens = int(response.usage.output_tokens or 0)
     cost_usd = (input_tokens * INPUT_PRICE_PER_M + output_tokens * OUTPUT_PRICE_PER_M) / 1_000_000.0
     critical = _has_critical_flag(analysis_text)
-    has_anom_section = "ANOMALY FLAGS" in analysis_text.upper()
+    has_anom_section = critical  # the new prompt only includes the section on issues
 
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=CACHE_TTL_S)).strftime("%Y-%m-%d %H:%M:%S")
 
