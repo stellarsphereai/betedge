@@ -788,17 +788,18 @@ async def get_fixtures(league: str | None = None, limit: int = Query(50, ge=1, l
 
 @app.get("/digest-preview")
 async def digest_preview():
-    ev = await get_ev_bets(bankroll=BANKROLL, min_edge=MIN_EDGE, league=None)
+    # Multi-league top 3 — same merge logic as /best-bets
+    best = await get_best_bets(league="all", bankroll=BANKROLL, min_edge=MIN_EDGE, limit=3)
     stats = await get_stats()
-    subject, body = digest.render(ev, stats)
+    subject, body = digest.render({"bets": best["bets"]}, stats)
     return {"subject": subject, "body": body, "to": os.getenv("DIGEST_EMAIL")}
 
 
 @app.post("/send-digest")
 async def send_digest():
-    ev = await get_ev_bets(bankroll=BANKROLL, min_edge=MIN_EDGE, league=None)
+    best = await get_best_bets(league="all", bankroll=BANKROLL, min_edge=MIN_EDGE, limit=3)
     stats = await get_stats()
-    subject, body = digest.render(ev, stats)
+    subject, body = digest.render({"bets": best["bets"]}, stats)
     result = digest.send(subject, body)
     if not result["sent"]:
         raise HTTPException(502, result["reason"])
@@ -998,6 +999,69 @@ async def anomalies_list(limit: int = Query(200, ge=1, le=1000)):
     return {
         "count_today": anomaly.count_today(),
         "anomalies": anomaly.recent(limit=limit),
+    }
+
+
+# --- Best bets across leagues ------------------------------------------------
+
+LEAGUES_FOR_BEST_BETS = ("epl", "ucl", "uel", "world_cup")
+
+
+def _bet_is_excluded(b: dict) -> bool:
+    """A bet is excluded from the top-3 ranking if it's flagged as
+    actionable=False (PHANTOM_EDGE excludes outright) or carries any
+    anomaly that excludes-bet / downgrades-to-low (per-league EDGE_HIGH
+    threshold). Per-league thresholds were already applied at /ev-bets
+    time, so we just enforce the flag here."""
+    if not b.get("actionable", True):
+        return True
+    for f in (b.get("anomaly_flags") or []):
+        if f.get("excludes_bet") or f.get("downgrades_to_low"):
+            return True
+    return False
+
+
+@app.get("/best-bets")
+async def get_best_bets(
+    league: str = Query("all", description="all | epl | ucl | uel | world_cup"),
+    bankroll: float = Query(BANKROLL, ge=100.0, le=1_000_000.0),
+    min_edge: float = Query(MIN_EDGE, ge=0.0, le=0.5),
+    limit: int = Query(3, ge=1, le=10),
+):
+    """Top-N best bets across one or all tracked leagues, ranked by edge.
+
+    Per-league anomaly thresholds are applied at /ev-bets time, so a
+    UCL bet at 11% edge survives (UCL threshold 12%) while a World Cup
+    bet at 11% edge is filtered (WC threshold 10%).
+    """
+    league = (league or "all").lower()
+    leagues = LEAGUES_FOR_BEST_BETS if league == "all" else (league,)
+
+    merged: list[dict] = []
+    leagues_seen: set[str] = set()
+    for lg in leagues:
+        try:
+            r = await get_ev_bets(bankroll=bankroll, min_edge=min_edge, league=lg)
+        except HTTPException:
+            continue  # league not configured / no data → skip
+        for b in r.get("bets", []) or []:
+            if _bet_is_excluded(b):
+                continue
+            # Make sure each row carries the league key (some paths set it,
+            # some don't — be defensive).
+            b.setdefault("league", lg)
+            merged.append(b)
+            leagues_seen.add(b["league"])
+
+    merged.sort(key=lambda x: x.get("edge", 0.0), reverse=True)
+    top = merged[:limit]
+    return {
+        "league_filter": league,
+        "leagues_considered": list(leagues),
+        "leagues_in_top": sorted({b.get("league") for b in top if b.get("league")}),
+        "count_considered": len(merged),
+        "count_returned": len(top),
+        "bets": top,
     }
 
 

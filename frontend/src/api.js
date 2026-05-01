@@ -34,6 +34,10 @@ export const api = {
   },
   sendDigest: () => post('/send-digest'),
   digestPreview: () => get('/digest-preview'),
+  bestBets: ({ league = 'all', limit = 3 } = {}) => {
+    const params = new URLSearchParams({ league, limit })
+    return get(`/best-bets?${params}`)
+  },
   portfolioSummary: ({ league, isPaper } = {}) => {
     const params = new URLSearchParams()
     if (league) params.set('league', league)

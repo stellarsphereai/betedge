@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Header from './components/Header'
 import BookBalanceStrip from './components/BookBalanceStrip'
+import BestBetsGrid from './components/BestBetsGrid'
 import StatsRow from './components/StatsRow'
 import FilterTabs from './components/FilterTabs'
 import MatchCard from './components/MatchCard'
@@ -220,6 +221,11 @@ export default function App() {
       />
 
       <BookBalanceStrip refreshKey={lastFetched?.getTime?.()} />
+
+      <BestBetsGrid
+        refreshKey={lastFetched?.getTime?.()}
+        onJumpToMatch={scrollToMatch}
+      />
 
       <StatsRow
         ev={ev}

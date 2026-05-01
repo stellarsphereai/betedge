@@ -35,8 +35,18 @@ def _fmt_time(iso: str | None) -> str:
         return iso
 
 
+_MEDALS = ["🥇 BEST BET", "🥈 SECOND BEST", "🥉 THIRD BEST"]
+_LEAGUE_LABEL = {"epl": "EPL", "ucl": "UCL", "uel": "EL", "world_cup": "World Cup"}
+
+
 def render(ev_payload: dict, stats_payload: dict, max_bets: int = 3) -> tuple[str, str]:
-    """Return (subject, body)."""
+    """Return (subject, body).
+
+    `ev_payload['bets']` is expected to already be the cross-league merged
+    + anomaly-filtered top-N (caller produces it via /best-bets-style merge).
+    We re-apply the anomaly filter defensively so callers that pass raw
+    /ev-bets output still get sane behavior.
+    """
     import anomaly  # local import keeps this module standalone-importable
     bets_all = (ev_payload or {}).get("bets", []) or []
     excluded_ids = anomaly.excluded_match_ids_today()
@@ -56,27 +66,42 @@ def render(ev_payload: dict, stats_payload: dict, max_bets: int = 3) -> tuple[st
     weekly = (stats_payload or {}).get("weekly", {}) or {}
     accuracy_data = (stats_payload or {}).get("accuracy", {}) or {}
 
-    today = datetime.now(timezone.utc).strftime("%a %b %d, %Y")
+    now = datetime.now(timezone.utc)
+    today_short = f"{now.strftime('%b')} {now.day}"
     n_bets = len(bets)
-    league_label = "WC" if league_mode == "world_cup" else "EPL"
-    subject = f"{league_label} Bets Today — {today} — {n_bets} bet{'s' if n_bets != 1 else ''} found"
+
+    # Subject reflects the leagues actually represented in today's top picks.
+    leagues_in_top: list[str] = []
+    seen: set[str] = set()
+    for b in bets:
+        lg = (b.get("league") or "").lower()
+        if lg and lg not in seen:
+            seen.add(lg)
+            leagues_in_top.append(_LEAGUE_LABEL.get(lg, lg.upper()))
+    if leagues_in_top:
+        across = " + ".join(leagues_in_top)
+        subject = f"BetEdge — {today_short} — {n_bets} bet{'s' if n_bets != 1 else ''} ready across {across}"
+    else:
+        subject = f"BetEdge — {today_short} — no +EV bets today"
 
     lines: list[str] = ["=== TODAY'S BETS ==="]
     if not bets:
         lines.append("(no +EV bets at the current edge threshold)")
-    for b in bets:
+    for i, b in enumerate(bets):
         bookmaker = b.get("best_book") or b.get("book")
         odds = b.get("best_odds") or b.get("decimal_odds")
         edge_pct = (b.get("edge") or 0) * 100
         timing = b.get("timing", "GREEN")
         stake = b.get("stake", 0)
-        m_home = (b.get("model_prob_home") or 0)
-        # /ev-bets currently emits per-outcome rows; pull match-level model probs by re-asking
-        # the prediction directly. For simplicity we inline what /ev-bets returns.
-        outcome_label = {"home": b.get("home_team"), "away": b.get("away_team"), "draw": "Draw"}.get(b["outcome"], b["outcome"])
+        outcome_label = {"home": b.get("home_team"), "away": b.get("away_team"), "draw": "Draw"}.get(
+            b["outcome"], b["outcome"]
+        )
+        medal = _MEDALS[i] if i < len(_MEDALS) else f"#{i + 1}"
+        lg_key = (b.get("league") or league_mode).lower()
+        lg_label = _LEAGUE_LABEL.get(lg_key, lg_key.upper())
 
+        lines.append(f"\n{medal} — {lg_label}")
         lines.append(
-            f"\n[{b.get('league', league_mode).upper()}] "
             f"{b.get('home_team')} vs {b.get('away_team')} — {_fmt_time(b.get('commence_time'))}"
         )
         lines.append(f"Bet: {outcome_label} at {odds} on {bookmaker}")
