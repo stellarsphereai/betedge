@@ -179,7 +179,7 @@ export default function App() {
     setBets(prev => prev.filter(b => b.id !== deletedId))
   }
 
-  async function logPaperBet(prediction, bet) {
+  async function _logBet(prediction, bet, isPaper) {
     try {
       await api.logBet({
         match_id: prediction.match_id,
@@ -190,7 +190,7 @@ export default function App() {
         odds_at_placement: bet.best_odds ?? bet.decimal_odds,
         stake: bet.stake,
         edge_at_placement: bet.edge,
-        is_paper: true,
+        is_paper: isPaper,
         market: bet.market || 'h2h',
         market_line: bet.market_line ?? null,
       })
@@ -200,6 +200,9 @@ export default function App() {
       throw e
     }
   }
+
+  const logPaperBet = (prediction, bet) => _logBet(prediction, bet, true)
+  const logRealBet = (prediction, bet) => _logBet(prediction, bet, false)
 
   return (
     <div className="max-w-7xl mx-auto px-5 py-6">
@@ -270,6 +273,7 @@ export default function App() {
               league={league}
               flashed={flashedMatchId === m.prediction.match_id}
               onLogPaper={logPaperBet}
+              onLogReal={logRealBet}
             />
           ))}
         </div>

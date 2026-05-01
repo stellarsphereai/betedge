@@ -174,17 +174,56 @@ function RemoveControl({ bet, onDeleted }) {
 }
 
 export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet }) {
-  const rows = (bets || []).filter(b => b.is_paper)
+  const [mode, setMode] = useState('paper')  // 'paper' | 'cash'
+  const all = bets || []
+  const paperRows = all.filter(b => b.is_paper)
+  const cashRows = all.filter(b => !b.is_paper)
+  const rows = mode === 'paper' ? paperRows : cashRows
+
+  const ModeTabs = (
+    <div className="flex justify-between items-center mb-3">
+      <div className="bg-ink-800 border border-ink-700 rounded-full p-0.5 flex">
+        <button
+          onClick={() => setMode('paper')}
+          className={`px-3 py-1 rounded-full text-xs font-medium ${
+            mode === 'paper' ? 'bg-accent text-white' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Paper trade <span className="ml-1 opacity-60">({paperRows.length})</span>
+        </button>
+        <button
+          onClick={() => setMode('cash')}
+          className={`px-3 py-1 rounded-full text-xs font-medium ${
+            mode === 'cash' ? 'bg-warn text-ink-950' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Cash trade <span className="ml-1 opacity-60">({cashRows.length})</span>
+        </button>
+      </div>
+      <div className="text-[11px] text-slate-500">
+        {mode === 'cash'
+          ? 'Real-money bets — settling these moves your book balances.'
+          : 'Simulated bets — book balances are not affected.'}
+      </div>
+    </div>
+  )
 
   if (!rows.length) {
     return (
-      <div className="bg-ink-900 border border-dashed border-ink-700 rounded-xl p-8 text-center text-slate-400 text-sm">
-        No paper bets logged yet. Click "Log paper bet" on a +EV match card to add one.
+      <div>
+        {ModeTabs}
+        <div className="bg-ink-900 border border-dashed border-ink-700 rounded-xl p-8 text-center text-slate-400 text-sm">
+          {mode === 'paper'
+            ? 'No paper bets logged yet. Click the + on a +EV match card to add one.'
+            : 'No cash trades logged yet. Click the $ on a +EV match card and confirm to add one.'}
+        </div>
       </div>
     )
   }
 
   return (
+    <div>
+      {ModeTabs}
     <div className="bg-ink-900 border border-ink-700 rounded-xl overflow-hidden">
       <table className="w-full text-xs">
         <thead className="bg-ink-800 text-[10px] uppercase tracking-wider text-slate-400">
@@ -247,6 +286,7 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet }) {
           })}
         </tbody>
       </table>
+    </div>
     </div>
   )
 }

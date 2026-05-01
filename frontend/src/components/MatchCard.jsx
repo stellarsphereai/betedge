@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, Plus, Check, Loader2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
+import { ExternalLink, Plus, Check, Loader2, ChevronDown, ChevronRight, Sparkles, DollarSign, X } from 'lucide-react'
 import ProbabilityBar from './ProbabilityBar'
 import MatchAnalysisPanel from './MatchAnalysisPanel'
 
@@ -135,7 +135,7 @@ function ProbabilityView({ title, view, prediction, valueClass = 'text-slate-300
   )
 }
 
-export default function MatchCard({ prediction, bets, consensus, modelView, league, flashed, onLogPaper }) {
+export default function MatchCard({ prediction, bets, consensus, modelView, league, flashed, onLogPaper, onLogReal }) {
   const sortedBets = bestPerOutcome(bets)
   const hasArb = sortedBets.length > 0
   const topEdge = Math.max(0, ...sortedBets.map(b => b.edge))
@@ -162,12 +162,17 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
     } catch {}
   }
 
-  async function handleLogRow(b) {
+  // kind: 'paper' | 'real'. The real flow is gated by a confirm step
+  // (see startConfirmReal) so a stray click can't push real money.
+  async function handleLog(b, kind) {
     const k = rowKey(b)
-    if (logStates[k]) return
-    setLogStates(s => ({ ...s, [k]: 'logging' }))
+    const cur = logStates[k]
+    if (cur === 'logging' || cur === 'logging-real' || cur === 'logged') return
+    const inFlight = kind === 'real' ? 'logging-real' : 'logging'
+    setLogStates(s => ({ ...s, [k]: inFlight }))
     try {
-      await onLogPaper?.(prediction, b)
+      const handler = kind === 'real' ? onLogReal : onLogPaper
+      await handler?.(prediction, b)
       setLogStates(s => ({ ...s, [k]: 'logged' }))
       setTimeout(() => setLogStates(s => {
         const { [k]: _drop, ...rest } = s
@@ -179,6 +184,16 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
         return rest
       })
     }
+  }
+
+  function startConfirmReal(b) {
+    setLogStates(s => ({ ...s, [rowKey(b)]: 'confirming-real' }))
+  }
+  function cancelConfirm(b) {
+    setLogStates(s => {
+      const { [rowKey(b)]: _drop, ...rest } = s
+      return rest
+    })
   }
 
   return (
@@ -243,7 +258,7 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
               <th className="text-right">Edge</th>
               <th className="text-right">Timing</th>
               <th className="text-right">Stake</th>
-              {league !== 'world_cup' && <th className="text-center w-8">Log</th>}
+              {league !== 'world_cup' && <th className="text-center w-20">Log</th>}
             </tr>
           </thead>
           <tbody>
@@ -275,41 +290,75 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                   {league !== 'world_cup' && (
                     <td className="text-center">
                       {(() => {
-                        // Disable the + when stake resolved to $0 — usually
-                        // means a PHANTOM_EDGE anomaly excluded the bet, or
-                        // Kelly produced a sub-$5 stake. Tooltip surfaces the
-                        // exact reason from the backend.
+                        // Disable both buttons when stake resolved to $0 —
+                        // usually a PHANTOM_EDGE exclusion or sub-$5 Kelly.
                         const blocked = !b.actionable || !b.stake || b.stake <= 0
                         const reason = b.lockout_reason
                           || (b.anomaly_flags?.find(f => f.excludes_bet)?.description)
                           || (b.stake <= 0 ? 'Stake is $0 — bet excluded from logging' : '')
+
+                        if (state === 'logged') {
+                          return (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded border bg-good-soft border-good text-good">
+                              <Check size={12} />
+                            </span>
+                          )
+                        }
+                        if (state === 'logging' || state === 'logging-real') {
+                          const isReal = state === 'logging-real'
+                          return (
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded border bg-ink-800 ${isReal ? 'border-warn text-warn' : 'border-accent text-accent'}`}>
+                              <Loader2 size={12} className="animate-spin" />
+                            </span>
+                          )
+                        }
+                        if (state === 'confirming-real') {
+                          return (
+                            <span className="inline-flex gap-1" title={`Confirm real-money $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}>
+                              <button
+                                onClick={() => handleLog(b, 'real')}
+                                title={`Yes — log real $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
+                                className="inline-flex items-center justify-center w-6 h-6 rounded border bg-warn-soft border-warn text-warn hover:opacity-80"
+                              >
+                                <Check size={12} />
+                              </button>
+                              <button
+                                onClick={() => cancelConfirm(b)}
+                                title="Cancel"
+                                className="inline-flex items-center justify-center w-6 h-6 rounded border bg-ink-800 border-ink-700 text-slate-400 hover:border-slate-500"
+                              >
+                                <X size={12} />
+                              </button>
+                            </span>
+                          )
+                        }
                         return (
-                          <button
-                            onClick={() => handleLogRow(b)}
-                            disabled={!!state || blocked}
-                            title={
-                              blocked
-                                ? reason
-                                : state === 'logged'
-                                ? 'Logged'
-                                : state === 'logging'
-                                ? 'Logging…'
-                                : 'Log this paper bet'
-                            }
-                            className={`inline-flex items-center justify-center w-6 h-6 rounded border transition-colors ${
-                              blocked
-                                ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
-                                : state === 'logged'
-                                ? 'bg-good-soft border-good text-good'
-                                : state === 'logging'
-                                ? 'bg-ink-800 border-accent text-accent'
-                                : 'bg-ink-800 border-ink-700 hover:border-accent text-slate-300'
-                            }`}
-                          >
-                            {state === 'logging' && <Loader2 size={12} className="animate-spin" />}
-                            {state === 'logged' && <Check size={12} />}
-                            {!state && <Plus size={12} />}
-                          </button>
+                          <span className="inline-flex gap-1">
+                            <button
+                              onClick={() => handleLog(b, 'paper')}
+                              disabled={blocked}
+                              title={blocked ? reason : `Log paper bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
+                              className={`inline-flex items-center justify-center w-6 h-6 rounded border transition-colors ${
+                                blocked
+                                  ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
+                                  : 'bg-ink-800 border-ink-700 hover:border-accent text-slate-300'
+                              }`}
+                            >
+                              <Plus size={12} />
+                            </button>
+                            <button
+                              onClick={() => startConfirmReal(b)}
+                              disabled={blocked}
+                              title={blocked ? reason : `Log REAL-money bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
+                              className={`inline-flex items-center justify-center w-6 h-6 rounded border transition-colors ${
+                                blocked
+                                  ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
+                                  : 'bg-ink-800 border-ink-700 hover:border-warn text-warn'
+                              }`}
+                            >
+                              <DollarSign size={12} />
+                            </button>
+                          </span>
                         )
                       })()}
                     </td>

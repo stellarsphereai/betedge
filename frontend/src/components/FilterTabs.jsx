@@ -2,7 +2,7 @@ const TABS = [
   { id: 'all', label: 'All matches' },
   { id: 'ev', label: '+EV only' },
   { id: 'high', label: 'High confidence' },
-  { id: 'log', label: 'Paper trade log' },
+  { id: 'log', label: 'Trade log' },
   { id: 'portfolio', label: 'Portfolio' },
   { id: 'anomalies', label: 'Anomalies' },
 ]
