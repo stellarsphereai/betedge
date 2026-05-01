@@ -28,6 +28,7 @@ import api_quota
 import calibrate
 import calibrate_engine
 import league_config
+import match_analysis
 import self_eval
 import wc_calibrate
 
@@ -962,6 +963,15 @@ async def anomalies_list(limit: int = Query(200, ge=1, le=1000)):
         "count_today": anomaly.count_today(),
         "anomalies": anomaly.recent(limit=limit),
     }
+
+
+# --- Match analysis (Claude) -------------------------------------------------
+
+
+@app.get("/match-analysis/{match_id}")
+async def match_analysis_get(match_id: str, force: bool = False):
+    """Per-match Haiku 4.5 analysis. Cached 30 min in SQLite; daily-cap'd."""
+    return await match_analysis.analyze_match(match_id, force=force)
 
 
 # --- Portfolio ---------------------------------------------------------------

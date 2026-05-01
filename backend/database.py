@@ -171,6 +171,22 @@ CREATE TABLE IF NOT EXISTS anomaly_log (
     was_bet_placed INTEGER DEFAULT 0
 );
 
+-- Match analysis — Claude Haiku 4.5 generated narratives, cached 30 minutes.
+-- Daily-budget enforcement counts rows in this table by date(created_at).
+CREATE TABLE IF NOT EXISTS match_analysis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id TEXT NOT NULL,
+    analysis_text TEXT NOT NULL,
+    anomalies_found INTEGER DEFAULT 0,
+    critical_flags INTEGER DEFAULT 0,
+    claude_model_used TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cost_usd REAL,
+    cache_expires_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_bets_match ON bets_placed(match_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_match ON model_predictions(match_id);
 CREATE INDEX IF NOT EXISTS idx_anomaly_match ON anomaly_log(match_id);
@@ -178,6 +194,8 @@ CREATE INDEX IF NOT EXISTS idx_anomaly_created ON anomaly_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_pred_results_league ON prediction_results(league_key, kickoff_time);
 CREATE INDEX IF NOT EXISTS idx_pred_results_team ON prediction_results(home_team, away_team);
 CREATE INDEX IF NOT EXISTS idx_bias_log_created ON bias_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_match_analysis_match ON match_analysis(match_id, cache_expires_at);
+CREATE INDEX IF NOT EXISTS idx_match_analysis_created ON match_analysis(created_at);
 """
 
 

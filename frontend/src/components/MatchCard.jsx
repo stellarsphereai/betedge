@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, Plus, Check, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
+import { ExternalLink, Plus, Check, Loader2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
 import ProbabilityBar from './ProbabilityBar'
+import MatchAnalysisPanel from './MatchAnalysisPanel'
 
 // Per-match "I've placed my bets for this game" flag, persisted in
 // localStorage. Keyed by match_id so it survives reloads but stays local
@@ -142,6 +143,7 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
   // Per-row log state, keyed by (market, line, outcome). Lets multiple rows
   // be logged independently without sharing one button's spinner.
   const [logStates, setLogStates] = useState({}) // { rowKey: 'logging' | 'logged' }
+  const [showAnalysis, setShowAnalysis] = useState(false)
 
   // Match-level "bets placed" flag, hydrated from localStorage. The toggle is
   // here for quickly visually marking a match "done" — no server state needed.
@@ -329,6 +331,12 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
           <span className="text-slate-200 tabular-nums">{prediction.away_xg?.toFixed(2)}</span>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => setShowAnalysis(s => !s)}
+            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-purple-600/20 text-purple-300 hover:bg-purple-600/30 border border-purple-600/40"
+          >
+            <Sparkles size={12} /> {showAnalysis ? 'Hide AI' : 'AI Analysis'}
+          </button>
           {hasArb && league === 'world_cup' && (
             <button
               className="flex items-center gap-1 text-xs bg-accent text-white px-2.5 py-1 rounded-md hover:opacity-90"
@@ -338,6 +346,14 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
           )}
         </div>
       </div>
+
+      {showAnalysis && (
+        <MatchAnalysisPanel
+          matchId={prediction.match_id}
+          matchLabel={`${prediction.home_team} vs ${prediction.away_team}`}
+          onClose={() => setShowAnalysis(false)}
+        />
+      )}
     </div>
   )
 }
