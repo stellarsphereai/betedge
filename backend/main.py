@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 import anomaly
 import api_quota
+import book_balance
 import calibrate
 import calibrate_engine
 import league_config
@@ -148,6 +149,7 @@ def _devig_avg_for_offers(per_book: dict[str, dict[str, float]]) -> dict[str, fl
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    book_balance.seed_from_env()  # idempotent — won't overwrite existing balances
     sched.auto_start_if_enabled()
     yield
     sched.stop()
@@ -496,7 +498,22 @@ async def get_ev_bets(
             offers = offer_lookup.get((b.market, b.market_line)) or {}
             outcome_offers = {bk: o[b.outcome] for bk, o in offers.items() if b.outcome in o}
             shop = line_shopper.best_line(outcome_offers, opening_odds=None, edge=b.edge)
-            stake = kelly.kelly_stake(b.edge, b.decimal_odds, bankroll, risk["max_stake_pct"])
+            kelly_stake_full = kelly.kelly_stake(b.edge, b.decimal_odds, bankroll, risk["max_stake_pct"])
+            # Cap by per-book balance for the recommended book. If the book
+            # isn't tracked (e.g. Caesars/BetRivers), available is None and
+            # we skip the cap. Stake-reduced bets carry a flag the UI shows.
+            recommended_book = shop.best_book if shop else b.book
+            book_key = book_balance.normalize_book(recommended_book)
+            available = book_balance.get_balance(book_key) if book_key else None
+            stake_reduced = False
+            top_up_book = None
+            if available is not None and kelly_stake_full > available:
+                stake = float(round(max(0.0, available)))
+                if stake > 0:
+                    stake_reduced = True
+                    top_up_book = recommended_book
+            else:
+                stake = kelly_stake_full
 
             # Market-agreement gate (WC): drop bets where the model's pick
             # disagrees with the de-vigged market consensus on direction —
@@ -519,6 +536,10 @@ async def get_ev_bets(
                 "league": league,
                 "paper_only": not risk["real_money"],
                 "commence_time": match.get("commence_time"),
+                "kelly_stake_full": kelly_stake_full,
+                "stake_reduced_low_balance": stake_reduced,
+                "top_up_book": top_up_book,
+                "book_balance_available": available,
             }
 
             # Anomaly detection: edge thresholds + sharp-book divergence. Each
@@ -977,6 +998,23 @@ async def anomalies_list(limit: int = Query(200, ge=1, le=1000)):
     return {
         "count_today": anomaly.count_today(),
         "anomalies": anomaly.recent(limit=limit),
+    }
+
+
+# --- Book balances -----------------------------------------------------------
+
+
+@app.get("/book-balances")
+async def book_balances():
+    """Per-book bankroll snapshot. Includes total + warning level per book
+    (ok / amber <$50 / red <$20). Backs the dashboard header strip."""
+    balances = book_balance.get_all()
+    total = sum(float(b.get("balance_usd") or 0.0) for b in balances)
+    return {
+        "total": round(total, 2),
+        "amber_threshold": book_balance.LOW_AMBER_USD,
+        "red_threshold": book_balance.LOW_RED_USD,
+        "books": balances,
     }
 
 

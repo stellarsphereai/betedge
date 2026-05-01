@@ -103,6 +103,29 @@ def render(ev_payload: dict, stats_payload: dict, max_bets: int = 3) -> tuple[st
     mode_label = "WORLD CUP LIVE" if league_mode == "world_cup" else "EPL PAPER TRADE"
     lines.append(f"Mode: {mode_label}")
 
+    # Per-book account balances + low-balance warnings.
+    try:
+        import book_balance
+        balances = book_balance.get_all()
+    except Exception:
+        balances = []
+    if balances:
+        lines.append("")
+        lines.append("=== ACCOUNT BALANCES ===")
+        col_width = max(len(b["display_name"]) for b in balances) + 1
+        for b in balances:
+            lines.append(f"  {b['display_name']:<{col_width}} ${b['balance_usd']:.2f}")
+        total = sum(float(b["balance_usd"] or 0.0) for b in balances)
+        lines.append(f"  {'Total':<{col_width}} ${total:.2f}")
+
+        low = [b for b in balances if b["warning_level"] != "ok"]
+        if low:
+            lines.append("")
+            lines.append("Low balance warnings:")
+            for b in low:
+                tag = "CRITICAL" if b["warning_level"] == "red" else "low"
+                lines.append(f"  - {b['display_name']}: ${b['balance_usd']:.2f} ({tag} — top up)")
+
     if excluded_today:
         lines.append("")
         lines.append("=== ANOMALIES DETECTED ===")

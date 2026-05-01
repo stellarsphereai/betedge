@@ -5,9 +5,13 @@ Workflow:
     1. log_bet()       → write a row at placement
     2. set_closing()   → at kickoff, fetch closing line and update
     3. settle_bet()    → after the match, write result, profit, status
+
+Settled bets also push their signed profit into the book's balance via
+book_balance.apply_settled_bet — paper bets are skipped automatically.
 """
 from __future__ import annotations
 
+import book_balance
 from database import db
 
 
@@ -286,7 +290,7 @@ async def capture_closing_for_bet(bet_id: int, sport_key: str) -> dict:
 def settle_bet(bet_id: int, won: bool) -> None:
     with db() as conn:
         cur = conn.execute(
-            "SELECT odds_at_placement, stake FROM bets_placed WHERE id = ?", (bet_id,)
+            "SELECT odds_at_placement, stake, book, is_paper FROM bets_placed WHERE id = ?", (bet_id,)
         )
         row = cur.fetchone()
         if not row:
@@ -296,6 +300,7 @@ def settle_bet(bet_id: int, won: bool) -> None:
             "UPDATE bets_placed SET status = ?, profit = ? WHERE id = ?",
             ("won" if won else "lost", profit, bet_id),
         )
+    book_balance.apply_settled_bet(row["book"], profit, is_paper=bool(row["is_paper"]))
 
 
 def mark_match_result(
@@ -351,7 +356,8 @@ def mark_match_result(
 
         rows = conn.execute(
             """
-            SELECT id, bet_type, market, market_line, odds_at_placement, stake
+            SELECT id, bet_type, market, market_line, odds_at_placement, stake,
+                   book, is_paper
             FROM bets_placed
             WHERE match_id = ? AND status = 'open'
             """,
@@ -359,6 +365,8 @@ def mark_match_result(
         ).fetchall()
 
         settled: list[dict] = []
+        # Stage balance updates outside the conn block so we don't nest writers.
+        balance_updates: list[tuple[str | None, float, bool]] = []
         for r in rows:
             market = (r["market"] or "h2h").lower()
             bet_type = (r["bet_type"] or "").lower()
@@ -396,6 +404,12 @@ def mark_match_result(
                 "bet_id": r["id"], "market": market, "bet_type": bet_type,
                 "won": won, "profit": profit,
             })
+            balance_updates.append((r["book"], profit, bool(r["is_paper"])))
+
+    # Apply balance changes outside the settlement transaction. Paper bets +
+    # untracked books are filtered inside apply_settled_bet itself.
+    for book_name, profit, is_paper in balance_updates:
+        book_balance.apply_settled_bet(book_name, profit, is_paper=is_paper)
 
     return {
         "match_id": match_id, "result": result,

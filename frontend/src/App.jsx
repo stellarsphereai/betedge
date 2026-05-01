@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Header from './components/Header'
+import BookBalanceStrip from './components/BookBalanceStrip'
 import StatsRow from './components/StatsRow'
 import FilterTabs from './components/FilterTabs'
 import MatchCard from './components/MatchCard'
@@ -217,6 +218,8 @@ export default function App() {
         anomalyExcluding={counts.anomalies_excluding}
         onJumpToAnomalies={() => setTab('anomalies')}
       />
+
+      <BookBalanceStrip refreshKey={lastFetched?.getTime?.()} />
 
       <StatsRow
         ev={ev}

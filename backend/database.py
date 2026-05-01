@@ -171,6 +171,18 @@ CREATE TABLE IF NOT EXISTS anomaly_log (
     was_bet_placed INTEGER DEFAULT 0
 );
 
+-- Per-book bankroll balances. Seeded from BALANCE_<BOOK> env vars on
+-- startup (INSERT OR IGNORE so existing balances persist across restarts).
+-- Updated when real-money bets settle: balance += profit. Paper bets do
+-- not move real-account balances.
+CREATE TABLE IF NOT EXISTS book_balance (
+    book_key TEXT PRIMARY KEY,           -- 'fanduel', 'draftkings', 'espnbet', etc.
+    display_name TEXT,                   -- 'FanDuel', 'DraftKings', 'ESPN Bet', etc.
+    balance_usd REAL NOT NULL DEFAULT 0,
+    initial_balance_usd REAL NOT NULL DEFAULT 0,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Match analysis — Claude Haiku 4.5 generated narratives, cached 30 minutes.
 -- Daily-budget enforcement counts rows in this table by date(created_at).
 CREATE TABLE IF NOT EXISTS match_analysis (
