@@ -85,7 +85,7 @@ def main() -> None:
     print("=" * 72)
 
     for s in SAMPLES:
-        p = model.predict(s["home"], s["away"], knockout=s["knockout"])
+        p = model.predict(s["home"], s["away"], knockout=s["knockout"], league_id=39)
         print()
         print(f"▸ {s['label']}")
         print(f"  Expected goals : {p.home_team} {p.home_xg}  ·  {p.away_team} {p.away_xg}")
@@ -102,7 +102,7 @@ def main() -> None:
     print("EV calculator demo — synthetic NY-book odds vs the City model above")
     print("=" * 72)
     city = SAMPLES[0]
-    pred = model.predict(city["home"], city["away"])
+    pred = model.predict(city["home"], city["away"], league_id=39)
     # Synthetic odds: DraftKings is sharp, Bally Bet leaks edge on the underdog.
     offers = {
         "DraftKings": {"home": 1.45, "draw": 4.80, "away": 7.50},

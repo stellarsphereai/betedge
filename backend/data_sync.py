@@ -286,7 +286,7 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                 season_avg_against=a_season_against,
             )
             knockout = league == "world_cup" and _is_knockout(fx.get("league", {}).get("round"))
-            prediction = model.predict(home_form, away_form, knockout=knockout, params=model_params)
+            prediction = model.predict(home_form, away_form, knockout=knockout, params=model_params, league_id=league_id)
 
             match_id = f"af-{fx['fixture']['id']}"
 

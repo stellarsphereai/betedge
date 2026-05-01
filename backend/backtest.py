@@ -175,7 +175,7 @@ async def run_backtest() -> dict:
             name=a["name"], xg_for=a_xf, xg_against=a_xa, games_played=len(a_xf),
             season_avg_for=a_szn_for, season_avg_against=a_szn_against,
         )
-        pred = model.predict(home_form, away_form, knockout=False)
+        pred = model.predict(home_form, away_form, knockout=False, league_id=api_football.EPL_LEAGUE_ID)
 
         probs = {"home": pred.home_win_pct, "draw": pred.draw_pct, "away": pred.away_win_pct}
         winner = max(probs, key=probs.get)

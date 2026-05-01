@@ -183,7 +183,7 @@ async def run_backtest() -> dict:
             season_avg_for=a_szn_for, season_avg_against=a_szn_against,
         )
         knockout = _is_knockout(fx["league"]["round"])
-        pred = model.predict(home_form, away_form, knockout=knockout)
+        pred = model.predict(home_form, away_form, knockout=knockout, league_id=LEAGUE)
 
         probs = {"home": pred.home_win_pct, "draw": pred.draw_pct, "away": pred.away_win_pct}
         winner = max(probs, key=probs.get)

@@ -296,6 +296,7 @@ async def run_model(payload: RunModelInput):
             _to_team_form(match.home),
             _to_team_form(match.away),
             knockout=match.knockout,
+            league_id=data_sync.LEAGUE_TO_API_FOOTBALL.get(match.league),
         )
         pred_id = _store_prediction(match, prediction)
         results.append({"id": pred_id, **prediction.__dict__})

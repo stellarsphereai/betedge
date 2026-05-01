@@ -41,6 +41,7 @@ def _evaluate_params(
     fixtures_all: list[dict],
     stats_cache: dict[int, list[dict]],
     params: model.ModelParams,
+    league_id: int | None = None,
 ) -> dict | None:
     """Run model.predict() with `params` against every test fixture; return
     aggregate Brier and winner-accuracy. None if no fixture had enough prior
@@ -69,7 +70,7 @@ def _evaluate_params(
             season_avg_for=a_szn_for, season_avg_against=a_szn_against,
         )
         knockout = backtest_ucl._is_knockout(fx["league"]["round"])
-        pred = model.predict(home_form, away_form, knockout=knockout, params=params)
+        pred = model.predict(home_form, away_form, knockout=knockout, params=params, league_id=league_id)
         probs = {"home": pred.home_win_pct, "draw": pred.draw_pct, "away": pred.away_win_pct}
         target = {"home": 0, "draw": 0, "away": 0}
         target[actual] = 1
@@ -110,12 +111,12 @@ async def grid_search_ucl_knockouts(rho_grid: tuple[float, ...] = RHO_GRID,
              len(test_fixtures), len(rho_grid), len(ko_grid))
 
     # Baseline: current defaults
-    baseline = _evaluate_params(test_fixtures, fixtures, stats_cache, model.DEFAULT_PARAMS)
+    baseline = _evaluate_params(test_fixtures, fixtures, stats_cache, model.DEFAULT_PARAMS, league_id=backtest_ucl.LEAGUE)
 
     results: list[dict] = []
     for rho, ko in product(rho_grid, ko_grid):
         params = model.ModelParams(rho=rho, ko_draw_damping=ko)
-        score = _evaluate_params(test_fixtures, fixtures, stats_cache, params)
+        score = _evaluate_params(test_fixtures, fixtures, stats_cache, params, league_id=backtest_ucl.LEAGUE)
         if score is None:
             continue
         results.append({

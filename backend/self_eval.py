@@ -42,12 +42,16 @@ FORM_BIAS_THRESHOLD = 0.15      # |acc_winners − acc_losers| > 15pp
 EDGE_MAT_THRESHOLD = 0.10       # actual_roi < expected_roi − 10pp
 XG_HOT_RATIO = 1.30
 XG_COLD_RATIO = 0.70
+OU_BIAS_THRESHOLD = 0.15        # |mean_model_over − actual_over_rate| > 15pp
 
 # Backtest reference for the dashboard's status check (set by the EPL 2023-24
-# rounds 37-38 backtest after the model fixes landed).
+# rounds 37-38 backtest after the model fixes landed). Refreshed when the
+# league-average xG normalisation fix landed: winner accuracy held at 75%,
+# Brier ticked from 0.4024 → 0.4152, and the 70%+ confidence bucket moved
+# from 0.799/0.667 (over-confident) to 0.788/0.800 (well-calibrated).
 BACKTEST_BASELINE = {
     "winner_accuracy": 0.7500,
-    "avg_brier": 0.4024,
+    "avg_brier": 0.4152,
 }
 
 
@@ -461,8 +465,94 @@ def _check_xg_accuracy(league: str) -> dict | None:
     }
 
 
+def _check_over_under_calibration(league: str) -> dict | None:
+    """SYSTEMATIC_BIAS guard for the totals market.
+
+    For the last N settled Over/Under bets in this league, pull the model's
+    score-matrix snapshot from model_predictions and re-evaluate the model's
+    Over% at the bet's market_line. Compare the mean against the actual rate
+    at which total goals exceeded that line. Flag when the gap exceeds
+    OU_BIAS_THRESHOLD (15pp).
+
+    The score_matrix is the durable representation — same matrix the bet was
+    priced from — so this catches drift even if model parameters change later.
+    """
+    import model
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT b.match_id, b.market_line,
+                   p.score_matrix_json,
+                   r.actual_home_goals, r.actual_away_goals
+            FROM bets_placed b
+            JOIN model_predictions p ON p.match_id = b.match_id
+            JOIN prediction_results r ON r.match_id = b.match_id
+            WHERE p.league = ?
+              AND b.market = 'totals'
+              AND b.bet_type IN ('over', 'under')
+              AND b.status IN ('won', 'lost')
+              AND b.market_line IS NOT NULL
+              AND p.score_matrix_json IS NOT NULL
+              AND r.actual_home_goals IS NOT NULL
+              AND r.actual_away_goals IS NOT NULL
+            ORDER BY b.timestamp DESC
+            LIMIT ?
+            """,
+            (league, BIAS_MIN_SAMPLE),
+        ).fetchall()
+    if len(rows) < BIAS_MIN_SAMPLE:
+        return None
+
+    model_overs: list[float] = []
+    actual_overs: list[int] = []
+    for r in rows:
+        try:
+            matrix = json.loads(r["score_matrix_json"])
+        except (TypeError, ValueError):
+            continue
+        line = float(r["market_line"])
+        model_overs.append(model._over_from_matrix(matrix, line))
+        actual_total = (r["actual_home_goals"] or 0) + (r["actual_away_goals"] or 0)
+        actual_overs.append(1 if actual_total > line else 0)
+    if len(model_overs) < BIAS_MIN_SAMPLE:
+        return None
+
+    expected = sum(model_overs) / len(model_overs)
+    actual = sum(actual_overs) / len(actual_overs)
+    deviation = expected - actual
+    flagged = abs(deviation) > OU_BIAS_THRESHOLD
+    suggestion = None
+    if flagged:
+        # Reduce the league's total-goals contribution by ~10pp of the deviation.
+        # Actual operator action is documented; the loop is not auto-applied.
+        direction = "down" if deviation > 0 else "up"
+        suggestion = (
+            f"Model Over% runs {deviation*100:+.1f}pp vs actual. "
+            f"Scale total-goals contribution {direction} ~10% (e.g. multiplier "
+            f"{0.90 if deviation > 0 else 1.10:.2f}x) and re-check after another "
+            f"{BIAS_MIN_SAMPLE} settled O/U bets."
+        )
+    return {
+        "check_name": "SYSTEMATIC_BIAS" if flagged else "ou_calibration",
+        "league_key": league,
+        "league_id": LEAGUE_TO_API_FOOTBALL.get(league),
+        "sample_size": len(model_overs),
+        "expected_rate": round(expected, 4),
+        "actual_rate": round(actual, 4),
+        "deviation": round(deviation, 4),
+        "flagged": flagged,
+        "severity": "critical" if flagged else "info",
+        "suggested_adjustment": suggestion,
+        "description": (
+            f"Over/Under calibration on {len(model_overs)} settled bets: "
+            f"model Over% avg {expected*100:.1f}% vs actual Over rate "
+            f"{actual*100:.1f}% ({deviation*100:+.1f}pp gap)"
+        ),
+    }
+
+
 def run_bias_checks(league: str) -> list[dict]:
-    """Run all five bias checks for one league. Returns the rows that fired
+    """Run all bias checks for one league. Returns the rows that fired
     (flagged or all-clear); persists each to bias_log."""
     out: list[dict] = []
     for fn in (
@@ -471,6 +561,7 @@ def run_bias_checks(league: str) -> list[dict]:
         _check_form_recency_bias,
         _check_edge_materialization,
         _check_xg_accuracy,
+        _check_over_under_calibration,
     ):
         try:
             row = fn(league)

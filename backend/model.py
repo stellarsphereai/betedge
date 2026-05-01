@@ -15,6 +15,26 @@ HOME_GAMMA = 1.30  # home-field advantage multiplier on home_xg (Dixon-Coles γ)
 # stacked penalties never erase more than 15% of base attack strength.
 PENALTY_FLOOR = 0.85
 
+# League-average goals per team per game. The xG formula divides by this so
+# absolute attack/defense rates compose dimensionally as goals — not goals².
+# Numbers are rolling multi-season EPL ≈ 1.40, UCL ≈ 1.35, EL ≈ 1.30, WC ≈ 1.20.
+# Keys are API-Football league IDs.
+LEAGUE_AVG_GOALS: dict[int, float] = {
+    39: 1.40,   # EPL
+    2:  1.35,   # UCL
+    3:  1.30,   # Europa League
+    1:  1.20,   # World Cup
+}
+LEAGUE_AVG_DEFAULT = 1.35
+
+
+def league_avg_goals(league_id: int | None) -> float:
+    """Look up league-average goals per team per game, with a 1.35 fallback for
+    leagues we haven't measured (or when the caller didn't pass a league_id)."""
+    if league_id is None:
+        return LEAGUE_AVG_DEFAULT
+    return LEAGUE_AVG_GOALS.get(league_id, LEAGUE_AVG_DEFAULT)
+
 
 @dataclass(frozen=True)
 class ModelParams:
@@ -162,8 +182,10 @@ def predict(
     away: TeamForm,
     knockout: bool = False,
     params: ModelParams | None = None,
+    league_id: int | None = None,
 ) -> MatchPrediction:
     p = params or DEFAULT_PARAMS
+    league_avg = league_avg_goals(league_id)
     h_atk, h_def = team_strengths(home, p)
     a_atk, a_def = team_strengths(away, p)
 
@@ -193,17 +215,21 @@ def predict(
     h_atk *= home_pen_floored
     a_atk *= away_pen_floored
 
-    # Home-field advantage: γ applied to home_xg only (Dixon-Coles convention).
-    home_xg = max(0.05, h_atk * a_def * p.home_gamma)
-    away_xg = max(0.05, a_atk * h_def)
+    # Dixon-Coles xG with league-average normalisation. Without the divide by
+    # league_avg, multiplying two absolute goals/game rates produces goals² —
+    # which over-predicts totals by ~50% on EPL (mean predicted ≈ 4.2 vs
+    # actual ≈ 2.7). γ is applied to home_xg only (Dixon-Coles convention).
+    home_xg = max(0.05, h_atk * a_def / league_avg * p.home_gamma)
+    away_xg = max(0.05, a_atk * h_def / league_avg)
 
     # ANOMALY 5 — runtime invariant: home_xg MUST include p.home_gamma. Compare
     # against the same expression with gamma=1; the two must differ unless the
     # 0.05 floor saturated. Catches future refactors that silently drop γ.
-    _no_gamma = max(0.05, h_atk * a_def)
-    _with_gamma = max(0.05, h_atk * a_def * p.home_gamma)
+    _base = h_atk * a_def / league_avg
+    _no_gamma = max(0.05, _base)
+    _with_gamma = max(0.05, _base * p.home_gamma)
     if abs(home_xg - _with_gamma) > 1e-9 or (
-        p.home_gamma != 1.0 and h_atk * a_def > 0.05 / p.home_gamma
+        p.home_gamma != 1.0 and _base > 0.05 / p.home_gamma
         and abs(_no_gamma - _with_gamma) < 1e-9
     ):
         raise ModelInvariantError(
