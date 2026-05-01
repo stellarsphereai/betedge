@@ -28,7 +28,36 @@ def log_bet(
     market: str | None = None,
     market_line: float | None = None,
 ) -> int:
+    """Insert (or update) a bet. Idempotent on the bet's identity tuple
+    (match_id, market, market_line, bet_type) for OPEN bets — clicking
+    'Log paper' then 'Log cash' on the same row updates the existing row's
+    mode rather than creating two records, which would duplicate the bet
+    across the trade log's Paper/Cash sub-tabs."""
     with db() as conn:
+        existing = conn.execute(
+            """
+            SELECT id FROM bets_placed
+            WHERE match_id = ?
+              AND COALESCE(market, 'h2h') = COALESCE(?, 'h2h')
+              AND ((market_line IS NULL AND ? IS NULL) OR market_line = ?)
+              AND bet_type = ?
+              AND status = 'open'
+            ORDER BY id DESC LIMIT 1
+            """,
+            (match_id, market, market_line, market_line, bet_type),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE bets_placed
+                SET is_paper = ?, stake = ?, odds_at_placement = ?,
+                    edge_at_placement = ?, book = ?
+                WHERE id = ?
+                """,
+                (int(is_paper), stake, odds_at_placement,
+                 edge_at_placement, book, existing["id"]),
+            )
+            return int(existing["id"])
         cur = conn.execute(
             """
             INSERT INTO bets_placed
