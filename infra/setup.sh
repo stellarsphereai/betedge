@@ -50,11 +50,11 @@ log "1/10  Installing system packages"
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     software-properties-common ca-certificates gnupg curl git sqlite3 \
-    build-essential ufw debian-keyring debian-archive-keyring apt-transport-https
-sudo add-apt-repository -y ppa:deadsnakes/ppa
-sudo apt-get update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    python3.13 python3.13-venv python3.13-dev
+    build-essential ufw debian-keyring debian-archive-keyring apt-transport-https \
+    python3 python3-venv python3-dev
+# Note: we use system python3 (3.10 on Ubuntu 22.04) instead of python3.13 from
+# deadsnakes — the backend's deps don't need 3.13, and launchpad.net is not
+# always reachable from Lightsail's network.
 
 # Node 20
 if ! command -v node >/dev/null 2>&1; then
@@ -122,11 +122,16 @@ fi
 sudo -u "$APP_USER" bash -c "ssh-keyscan -t ed25519,rsa github.com >> /home/$APP_USER/.ssh/known_hosts 2>/dev/null"
 sudo -u "$APP_USER" chmod 600 "/home/$APP_USER/.ssh/known_hosts"
 
-# Verify the deploy key works before continuing
-if ! sudo -u "$APP_USER" ssh -o StrictHostKeyChecking=no -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+# Verify the deploy key works before continuing.
+# `ssh -T git@github.com` always exits 1 (GitHub denies shell access), and
+# `set -o pipefail` propagates that — so we capture output to a variable
+# instead of piping to grep.
+SSH_OUT=$(sudo -u "$APP_USER" ssh -o StrictHostKeyChecking=no -T git@github.com 2>&1 || true)
+if [[ "$SSH_OUT" != *"successfully authenticated"* ]]; then
     echo "Deploy key not yet recognized by GitHub. Add it at:"
     echo "  https://github.com/stellarsphereai/betedge/settings/keys/new"
     echo "Then re-run this script."
+    echo "  ssh response was: $SSH_OUT"
     exit 1
 fi
 
@@ -144,7 +149,7 @@ fi
 log "6/10  Backend Python venv + dependencies"
 # ---------------------------------------------------------------------------
 if [ ! -d "$APP_DIR/backend/.venv" ]; then
-    sudo -u "$APP_USER" python3.13 -m venv "$APP_DIR/backend/.venv"
+    sudo -u "$APP_USER" python3 -m venv "$APP_DIR/backend/.venv"
 fi
 sudo -u "$APP_USER" "$APP_DIR/backend/.venv/bin/pip" install --quiet --upgrade pip
 sudo -u "$APP_USER" "$APP_DIR/backend/.venv/bin/pip" install --quiet -r "$APP_DIR/backend/requirements.txt"
@@ -184,24 +189,15 @@ log "9/10  Caddy config (HTTP on port 80, tailnet-only via UFW)"
 # ---------------------------------------------------------------------------
 sudo tee /etc/caddy/Caddyfile >/dev/null <<CADDY
 :80 {
-    # API routes proxied to FastAPI on 127.0.0.1:8002
-    @api {
-        path /predictions* /ev-bets* /bets /bets/* /stats* /fixtures*
-        path /run-model /digest-preview /send-digest
-        path /backtest* /sync-data*
-        path /quota /scheduler*
-        path /anomalies* /model-health* /league-config*
-    }
+    # API routes proxied to FastAPI on 127.0.0.1:8002.
+    # Caddy's named matchers only honor the LAST 'path' directive, so all
+    # patterns must be on a single line.
+    @api path /predictions* /ev-bets* /bets /bets/* /stats* /fixtures* /run-model /digest-preview /send-digest /backtest* /sync-data* /quota /scheduler* /anomalies* /model-health* /league-config*
     handle @api {
         reverse_proxy 127.0.0.1:8002
     }
 
-    @admin_api {
-        path /admin/sync* /admin/scheduler*
-        path /admin/health
-        path /admin/calibrat* /admin/accuracy*
-        path /admin/wc/*
-    }
+    @admin_api path /admin/sync* /admin/scheduler* /admin/health /admin/calibrat* /admin/accuracy* /admin/wc/*
     handle @admin_api {
         reverse_proxy 127.0.0.1:8002
     }

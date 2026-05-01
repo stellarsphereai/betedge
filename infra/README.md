@@ -45,7 +45,7 @@ TAILSCALE_AUTH_KEY='tskey-auth-...' ./setup.sh
 
 The script will:
 
-1. Install Python 3.13, Node 20, Caddy, Tailscale, sqlite3, ufw
+1. Install Python 3 (system, 3.10 on Ubuntu 22.04), Node 20, Caddy, Tailscale, sqlite3, ufw
 2. Join the box to your tailnet (hostname `betedge`)
 3. Generate a GitHub deploy key, **print it, and exit**
 4. You add the key as a read-only deploy key at
