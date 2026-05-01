@@ -23,6 +23,17 @@ function fmtDate(iso) {
   try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
   catch { return iso }
 }
+// Date + time in the BROWSER'S local timezone (toLocale* uses the host TZ
+// automatically). Used for kickoff so a NY user sees a Saturday 2pm Eastern
+// kickoff as "May 3, 2:00 PM" instead of the underlying UTC string.
+function fmtDateTimeLocal(iso) {
+  try {
+    const d = new Date(iso)
+    const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    return `${date}, ${time}`
+  } catch { return iso }
+}
 function decimalToAmerican(d) {
   const x = Number(d)
   if (!Number.isFinite(x) || x <= 1) return '—'
@@ -198,8 +209,11 @@ function BetTable({ bets, league, market, status, dateFrom }) {
               return (
                 <tr key={b.id} className="border-t border-ink-800 hover:bg-ink-800/50">
                   <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{fmtDate(b.timestamp)}</td>
-                  <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">
-                    {b.match_kickoff ? fmtDate(b.match_kickoff) : <span className="text-slate-600">—</span>}
+                  <td
+                    className="px-2 py-1.5 text-slate-400 whitespace-nowrap"
+                    title={b.match_kickoff || ''}
+                  >
+                    {b.match_kickoff ? fmtDateTimeLocal(b.match_kickoff) : <span className="text-slate-600">—</span>}
                   </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <div className="text-slate-200">{b.home_team}</div>
@@ -542,7 +556,7 @@ function exportCSV(bets) {
     const implied = impliedFromOdds(b.odds_at_placement)
     return [
       b.timestamp,
-      b.match_kickoff || '',
+      b.match_kickoff ? fmtDateTimeLocal(b.match_kickoff) : '',
       `${b.home_team} vs ${b.away_team}`,
       b.league || b.match_league || '',
       b.market || 'h2h',
