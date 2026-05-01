@@ -617,22 +617,30 @@ export default function PortfolioView() {
           <h2 className="text-lg font-semibold">Portfolio</h2>
           <div className="text-xs text-slate-500">All bets, P&L, edges, and projections.</div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="bg-ink-800 border border-ink-700 rounded-full p-0.5 flex">
-            <button
-              onClick={() => setPaperOnly(true)}
-              className={`px-3 py-1 rounded-full text-xs font-medium ${paperOnly ? 'bg-accent text-white' : 'text-slate-400 hover:text-slate-200'}`}
-            >Paper trade</button>
-            <button
-              onClick={() => setPaperOnly(false)}
-              className={`px-3 py-1 rounded-full text-xs font-medium ${!paperOnly ? 'bg-accent text-white' : 'text-slate-400 hover:text-slate-200'}`}
-            >Real money</button>
-          </div>
+        <button
+          onClick={() => exportCSV(bets)}
+          className="px-3 py-1 rounded-md text-xs font-medium border border-ink-700 hover:border-slate-500 text-slate-200"
+        >Export CSV</button>
+      </div>
+
+      {/* Mode toggle — full row so it's not lost in the header */}
+      <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2 bg-ink-900 border border-ink-700 rounded-lg">
+        <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">View:</span>
+        <div className="bg-ink-800 border border-ink-700 rounded-full p-0.5 flex">
           <button
-            onClick={() => exportCSV(bets)}
-            className="px-3 py-1 rounded-md text-xs font-medium border border-ink-700 hover:border-slate-500 text-slate-200"
-          >Export CSV</button>
+            onClick={() => setPaperOnly(true)}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${paperOnly ? 'bg-accent text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+          >📝 Paper trade</button>
+          <button
+            onClick={() => setPaperOnly(false)}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${!paperOnly ? 'bg-warn text-ink-950 shadow' : 'text-slate-400 hover:text-slate-200'}`}
+          >💵 Cash trade</button>
         </div>
+        <span className="text-[11px] text-slate-500 ml-auto">
+          {paperOnly
+            ? 'Showing simulated bets — book balances unaffected.'
+            : 'Showing real-money bets — these moved your book balances when settled.'}
+        </span>
       </div>
 
       {/* Mode banner */}
