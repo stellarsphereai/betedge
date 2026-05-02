@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
 
 function fmtMoney(n) { return n == null ? '—' : `$${Number(n).toFixed(2)}` }
@@ -44,8 +44,17 @@ const STATUS_STYLES = {
 function MarkResultControl({ bet, onMark }) {
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [autoBusy, setAutoBusy] = useState(false)
+  const [autoMessage, setAutoMessage] = useState(null)  // { tone: 'info' | 'bad', text }
   const [home, setHome] = useState('')
   const [away, setAway] = useState('')
+
+  // Auto-clear info messages after 6s; keep error messages until next attempt.
+  useEffect(() => {
+    if (!autoMessage || autoMessage.tone === 'bad') return
+    const t = setTimeout(() => setAutoMessage(null), 6000)
+    return () => clearTimeout(t)
+  }, [autoMessage])
 
   if (bet.status !== 'open') {
     return (
@@ -55,14 +64,64 @@ function MarkResultControl({ bet, onMark }) {
     )
   }
 
+  async function fetchResult() {
+    if (autoBusy || busy) return
+    setAutoBusy(true); setAutoMessage(null)
+    try {
+      const r = await api.autoMarkResult(bet.id)
+      // The endpoint settles every open bet on this match. The list will
+      // refresh via onMark's loadAll, so just show a brief confirmation.
+      setAutoMessage({
+        tone: 'info',
+        text: `Settled ${r.home_goals}–${r.away_goals}`,
+      })
+      // Trigger the parent's reload by reusing onMark with the fetched score.
+      // The endpoint already wrote the settlement; this call hits mark-result
+      // again with the same goals, which is a no-op for non-open bets but
+      // refreshes the local bets list. Cleaner alternative: expose a separate
+      // refresh callback. For now this is the smallest change.
+      try { await onMark(bet, { home_goals: r.home_goals, away_goals: r.away_goals }) } catch {}
+    } catch (e) {
+      // 409 = match still going on — that's the explicit message we want.
+      // Other errors fall through with whatever the server said.
+      setAutoMessage({ tone: 'bad', text: e.message || String(e) })
+    } finally {
+      setAutoBusy(false)
+    }
+  }
+
   if (!expanded) {
     return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="text-[10px] uppercase font-semibold tracking-wider bg-ink-800 border border-ink-700 hover:border-accent text-slate-200 px-2 py-1 rounded"
-      >
-        Mark result
-      </button>
+      <div className="inline-flex flex-col items-stretch gap-1">
+        <div className="inline-flex gap-1">
+          <button
+            onClick={fetchResult}
+            disabled={autoBusy}
+            title="Fetch the final score from API-Football and settle all open bets on this match"
+            className="text-[10px] uppercase font-semibold tracking-wider bg-accent-soft border border-accent/40 text-accent hover:bg-accent hover:text-white px-2 py-1 rounded disabled:opacity-50"
+          >
+            {autoBusy ? '…' : 'Fetch result'}
+          </button>
+          <button
+            onClick={() => setExpanded(true)}
+            disabled={autoBusy}
+            title="Enter the score manually"
+            className="text-[10px] uppercase font-semibold tracking-wider bg-ink-800 border border-ink-700 hover:border-slate-500 text-slate-300 px-2 py-1 rounded"
+          >
+            Manual
+          </button>
+        </div>
+        {autoMessage && (
+          <div
+            className={`text-[10px] px-1 ${
+              autoMessage.tone === 'bad' ? 'text-warn' : 'text-good'
+            }`}
+            title={autoMessage.text}
+          >
+            {autoMessage.text}
+          </div>
+        )}
+      </div>
     )
   }
 

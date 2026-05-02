@@ -27,6 +27,16 @@ export const api = {
   modelHealth: (league = null) => get(`/model-health${league ? `?league=${league}` : ''}`),
   logBet: (b) => post('/bets', b),
   markResult: (betId, payload) => post(`/bets/${betId}/mark-result`, payload),
+  autoMarkResult: async (betId) => {
+    const r = await fetch(`/bets/${betId}/auto-mark`, { method: 'POST' })
+    const body = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      const err = new Error(body?.detail || `HTTP ${r.status}`)
+      err.status = r.status
+      throw err
+    }
+    return body
+  },
   deleteBet: async (betId) => {
     const r = await fetch(`/bets/${betId}`, { method: 'DELETE' })
     if (!r.ok) throw new Error(`HTTP ${r.status} on DELETE /bets/${betId}`)

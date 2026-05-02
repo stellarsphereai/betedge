@@ -121,6 +121,18 @@ async def fixtures_by_date_range(
     return data.get("response", []) or []
 
 
+async def fetch_fixture(
+    client: httpx.AsyncClient, fixture_id: int, force: bool = True,
+) -> dict | None:
+    """Single fixture by ID — used by /bets/{id}/auto-mark to read the score
+    + status when a paper bet is being settled. Default force=True because
+    'is the match finished yet?' is the whole point of the call; a stale
+    cache hit would defeat it."""
+    data = await _get(client, "/fixtures", {"id": fixture_id}, force=force)
+    rows = data.get("response", []) or []
+    return rows[0] if rows else None
+
+
 async def team_recent_fixtures(
     client: httpx.AsyncClient,
     team_id: int,

@@ -856,6 +856,72 @@ class MarkResultInput(BaseModel):
     result: str | None = Field(None, description="home / draw / away (legacy h2h-only)")
 
 
+@app.post("/bets/{bet_id}/auto-mark")
+async def auto_mark_result_for_bet(bet_id: int):
+    """Fetch the match's final score from API-Football and settle every
+    open bet on that match. Match IDs in our DB are 'af-<fixture_id>' —
+    we strip the prefix and look up the single fixture.
+
+    Returns 400 with a clear 'match still in progress' message if the
+    fixture isn't FT yet (the UI shows this as a toast)."""
+    with db() as conn:
+        bet = conn.execute(
+            "SELECT match_id FROM bets_placed WHERE id = ?", (bet_id,)
+        ).fetchone()
+    if not bet:
+        raise HTTPException(404, f"bet {bet_id} not found")
+    match_id = bet["match_id"] or ""
+    if not match_id.startswith("af-"):
+        raise HTTPException(
+            400,
+            f"can't auto-fetch — match_id {match_id!r} isn't an API-Football fixture",
+        )
+    try:
+        fixture_id = int(match_id.removeprefix("af-"))
+    except ValueError:
+        raise HTTPException(400, f"can't parse fixture id from {match_id!r}")
+
+    import httpx
+    async with httpx.AsyncClient() as client:
+        try:
+            fixture = await api_football.fetch_fixture(client, fixture_id)
+        except api_football.PlanError as e:
+            raise HTTPException(502, f"API-Football plan error: {e}")
+        except Exception as e:
+            raise HTTPException(502, f"failed to reach API-Football: {e}")
+
+    if not fixture:
+        raise HTTPException(404, f"fixture {fixture_id} not found in API-Football")
+
+    status_short = (fixture.get("fixture", {}).get("status", {}).get("short") or "").upper()
+    if status_short != "FT":
+        long_status = fixture.get("fixture", {}).get("status", {}).get("long") or status_short
+        elapsed = fixture.get("fixture", {}).get("status", {}).get("elapsed")
+        suffix = f" ({elapsed}')" if elapsed else ""
+        raise HTTPException(
+            409,
+            f"Match is still going on — status: {long_status}{suffix}. Try again after full time.",
+        )
+
+    home_goals = fixture.get("goals", {}).get("home")
+    away_goals = fixture.get("goals", {}).get("away")
+    if home_goals is None or away_goals is None:
+        raise HTTPException(502, "fixture is FT but goals data missing from API response")
+
+    try:
+        result = clv_tracker.mark_match_result(
+            match_id, home_goals=int(home_goals), away_goals=int(away_goals),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        "status": "FT",
+        "home_goals": int(home_goals),
+        "away_goals": int(away_goals),
+        **result,
+    }
+
+
 @app.post("/bets/{bet_id}/mark-result")
 async def mark_result_for_bet(bet_id: int, payload: MarkResultInput):
     """Settle the bet's match. With home_goals + away_goals supplied, settles
