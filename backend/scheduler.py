@@ -17,6 +17,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -212,6 +213,103 @@ async def _job_daily_pnl():
         )
 
 
+# ---------- end-of-day cron status email ----------
+
+
+# Friendly labels for the daily status email — covers every job_id in the
+# schedule below. New jobs added to the schedule should also get a label
+# here; the listener falls back to the raw id if missing.
+_JOB_LABELS = {
+    "sync_epl":             "EPL sync",
+    "sync_ucl":             "UCL sync",
+    "sync_ucl_final":       "UCL Final sync",
+    "sync_uel":             "Europa League sync",
+    "sync_world_cup":       "World Cup sync",
+    "morning_ev":           "Morning EV pre-warm",
+    "morning_digest":       "Morning digest email",
+    "closing_and_pnl":      "Closing lines + daily P&L + self-eval",
+    "weekly_accuracy":      "Weekly accuracy snapshot",
+    "monthly_calibration":  "Monthly calibration check",
+    "wc_nightly_check":     "World Cup nightly check",
+    "daily_status_email":   "Daily cron status email",
+}
+
+
+def _log_job_outcome(event):
+    """APScheduler listener — write one row per job execution to cron_log.
+    Catches both EVENT_JOB_EXECUTED and EVENT_JOB_ERROR; success flag is
+    derived from whether `event.exception` is set."""
+    success = event.exception is None
+    error_msg = None if success else str(event.exception)[:1000]
+    duration_ms = None
+    try:
+        with db() as conn:
+            conn.execute(
+                """
+                INSERT INTO cron_log (job_id, finished_at, success, error_msg, duration_ms)
+                VALUES (?, datetime('now'), ?, ?, ?)
+                """,
+                (event.job_id, 1 if success else 0, error_msg, duration_ms),
+            )
+    except Exception as e:
+        log.exception("cron_log insert failed for %s: %s", event.job_id, e)
+
+
+async def job_daily_status_email():
+    """End-of-day cadence: summarize today's cron_log rows in a single
+    pass/fail email. Runs at 23:58 NY-local — three minutes after the
+    closing_and_pnl job that's typically the last 'real' job of the day."""
+    log.info("scheduler: daily status email")
+    try:
+        from datetime import datetime as _dt
+        ny_now = _dt.now(TIMEZONE)
+        today_short = ny_now.strftime("%b ") + str(ny_now.day)
+        # We want today in the box's clock terms. cron_log uses datetime('now')
+        # which is UTC, so a 23:58 NY job runs at 03:58/04:58 UTC the NEXT day.
+        # Use a 24h lookback window to capture today's NY-local runs reliably.
+        with db() as conn:
+            rows = conn.execute(
+                """
+                SELECT job_id, finished_at, success, error_msg
+                FROM cron_log
+                WHERE finished_at >= datetime('now', '-24 hours')
+                ORDER BY finished_at
+                """,
+            ).fetchall()
+        rows = [dict(r) for r in rows]
+        passed = [r for r in rows if r["success"]]
+        failed = [r for r in rows if not r["success"]]
+
+        if failed:
+            subject = f"BetEdge cron status — {today_short} — {len(failed)} job{'s' if len(failed) != 1 else ''} FAILED ({len(passed)}/{len(rows)} OK)"
+        elif rows:
+            subject = f"BetEdge cron status — {today_short} — all {len(rows)} jobs OK"
+        else:
+            subject = f"BetEdge cron status — {today_short} — no jobs ran in the last 24h"
+
+        lines = [f"=== CRON STATUS — last 24h ==="]
+        if not rows:
+            lines.append("No jobs ran. Scheduler may be down — check `systemctl status betedge`.")
+        for r in rows:
+            label = _JOB_LABELS.get(r["job_id"], r["job_id"])
+            mark = "✓" if r["success"] else "✗"
+            ts = (r["finished_at"] or "")[5:16].replace(" ", " @ ")  # 'MM-DD @ HH:MM'
+            lines.append(f"  {mark} {label:<40} {ts} UTC")
+            if not r["success"] and r["error_msg"]:
+                lines.append(f"      → {r['error_msg'][:200]}")
+
+        if failed:
+            lines.append("")
+            lines.append("Investigate failed jobs via:")
+            lines.append("  sudo journalctl -u betedge -n 200 | grep -i error")
+
+        body = "\n".join(lines)
+        result = digest.send(subject, body)
+        log.info("daily status email: sent=%s reason=%s", result.get("sent"), result.get("reason"))
+    except Exception:
+        log.exception("daily status email crashed")
+
+
 # ---------- lifecycle ----------
 
 
@@ -229,6 +327,9 @@ def build() -> AsyncIOScheduler:
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_digest",        job_morning_digest,            CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("closing_and_pnl",       job_closing_lines_and_pnl,     CronTrigger(hour=23, minute=55, timezone=TIMEZONE)),
+        # End-of-day pass/fail summary email — runs 3 min after closing_and_pnl
+        # so the last 'real' job's outcome is in the cron_log it reads from.
+        ("daily_status_email",    job_daily_status_email,        CronTrigger(hour=23, minute=58, timezone=TIMEZONE)),
         # Weekly Sun 04:00 NY (right after the daily syncs and before the digest)
         ("weekly_accuracy",       job_weekly_accuracy_snapshot,  CronTrigger(day_of_week="sun", hour=4, minute=0, timezone=TIMEZONE)),
         # Monthly 1st 04:00 NY
@@ -238,6 +339,7 @@ def build() -> AsyncIOScheduler:
     ]
     for jid, fn, trig in schedule:
         s.add_job(fn, trig, id=jid, replace_existing=True)
+    s.add_listener(_log_job_outcome, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
     return s
 
 

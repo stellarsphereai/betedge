@@ -183,6 +183,18 @@ CREATE TABLE IF NOT EXISTS book_balance (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Cron job execution log — APScheduler EVENT_JOB_EXECUTED / EVENT_JOB_ERROR
+-- listener writes one row per job run. End-of-day status email reads from
+-- this to summarize the day's pass/fail.
+CREATE TABLE IF NOT EXISTS cron_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    finished_at TEXT NOT NULL DEFAULT (datetime('now')),
+    success INTEGER NOT NULL,
+    error_msg TEXT,
+    duration_ms INTEGER
+);
+
 -- Match analysis — Claude Haiku 4.5 generated narratives, cached 30 minutes.
 -- Daily-budget enforcement counts rows in this table by date(created_at).
 CREATE TABLE IF NOT EXISTS match_analysis (
@@ -208,6 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_results_team ON prediction_results(home_team
 CREATE INDEX IF NOT EXISTS idx_bias_log_created ON bias_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_match_analysis_match ON match_analysis(match_id, cache_expires_at);
 CREATE INDEX IF NOT EXISTS idx_match_analysis_created ON match_analysis(created_at);
+CREATE INDEX IF NOT EXISTS idx_cron_log_finished ON cron_log(finished_at);
 """
 
 
