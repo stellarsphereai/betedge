@@ -109,6 +109,132 @@ function SummaryCards({ summary }) {
   )
 }
 
+// ---------- per-book breakdown ----------------------------------------------
+
+// Order matches the BookBalanceStrip / digest row order so the eye learns it.
+const BOOK_DISPLAY_ORDER = [
+  'FanDuel', 'DraftKings', 'ESPN Bet', 'Fanatics', 'Bally Bet', 'BetRivers', 'Caesars',
+]
+
+function PortfolioByBook({ bets, bookBalances, mode }) {
+  // Aggregate the (filtered) bets by book.
+  const byBook = {}
+  for (const b of bets) {
+    const key = b.book || '(unknown)'
+    if (!byBook[key]) {
+      byBook[key] = { won: 0, lost: 0, open: 0, void: 0, staked: 0, profit: 0, expected: 0 }
+    }
+    const slot = byBook[key]
+    slot.staked += b.stake || 0
+    if (b.status === 'won') { slot.won += 1; slot.profit += b.profit || 0 }
+    else if (b.status === 'lost') { slot.lost += 1; slot.profit += b.profit || 0 }
+    else if (b.status === 'open') { slot.open += 1; slot.expected += (b.stake || 0) * (b.edge_at_placement || 0) }
+    else if (b.status === 'void') { slot.void += 1 }
+  }
+
+  // Merge with book_balance rows so books with NO bets still show with current balance.
+  // Only relevant for cash mode (paper bets don't move balances).
+  const showBalances = mode === 'cash' && bookBalances && bookBalances.length > 0
+  const balByName = showBalances
+    ? Object.fromEntries(bookBalances.map(b => [b.display_name, b]))
+    : {}
+  const orderedBooks = BOOK_DISPLAY_ORDER.filter(n => byBook[n] || balByName[n])
+  const otherBooks = Object.keys(byBook).filter(n => !BOOK_DISPLAY_ORDER.includes(n))
+  const allBooks = [...orderedBooks, ...otherBooks]
+
+  if (allBooks.length === 0) {
+    return null
+  }
+
+  const totals = Object.values(byBook).reduce(
+    (a, s) => ({
+      bets: a.bets + s.won + s.lost + s.open + s.void,
+      won: a.won + s.won,
+      lost: a.lost + s.lost,
+      open: a.open + s.open,
+      staked: a.staked + s.staked,
+      profit: a.profit + s.profit,
+      expected: a.expected + s.expected,
+    }),
+    { bets: 0, won: 0, lost: 0, open: 0, staked: 0, profit: 0, expected: 0 }
+  )
+
+  return (
+    <div className="bg-ink-900 border border-ink-700 rounded-xl overflow-hidden mb-4">
+      <div className="px-3 py-2 border-b border-ink-800 flex items-center gap-2 text-xs">
+        <span className="text-slate-200 font-semibold">P&L by book</span>
+        <span className="text-slate-500">— {mode === 'cash' ? 'Cash trade' : 'Paper trade'}</span>
+      </div>
+      <table className="w-full text-xs">
+        <thead className="bg-ink-800 text-[10px] uppercase tracking-wider text-slate-400">
+          <tr>
+            <th className="text-left  px-3 py-1.5">Book</th>
+            <th className="text-right">Bets</th>
+            <th className="text-right">Record</th>
+            <th className="text-right">Staked</th>
+            <th className="text-right">Net P&L</th>
+            <th className="text-right">Open EV</th>
+            {showBalances && <th className="text-right pr-3">Balance</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {allBooks.map(name => {
+            const s = byBook[name] || { won: 0, lost: 0, open: 0, void: 0, staked: 0, profit: 0, expected: 0 }
+            const bal = balByName[name]
+            const settled = s.won + s.lost
+            const total = settled + s.open + s.void
+            const profitTone = s.profit > 0 ? 'text-good' : s.profit < 0 ? 'text-bad' : 'text-slate-500'
+            const balTone = bal?.warning_level === 'red' ? 'text-bad'
+                          : bal?.warning_level === 'amber' ? 'text-warn'
+                          : 'text-slate-300'
+            return (
+              <tr key={name} className="border-t border-ink-800">
+                <td className="px-3 py-1.5">{name}</td>
+                <td className="text-right tabular-nums text-slate-400">{total || '—'}</td>
+                <td className="text-right tabular-nums">
+                  {settled
+                    ? <span className={s.won > s.lost ? 'text-good' : s.won < s.lost ? 'text-bad' : 'text-slate-300'}>{s.won}–{s.lost}</span>
+                    : <span className="text-slate-600">—</span>}
+                </td>
+                <td className="text-right tabular-nums">{s.staked ? fmtMoney(s.staked) : <span className="text-slate-600">—</span>}</td>
+                <td className={`text-right tabular-nums font-semibold ${profitTone}`}>
+                  {settled ? fmtMoney(s.profit, { signed: true }) : <span className="text-slate-600">—</span>}
+                </td>
+                <td className="text-right tabular-nums text-accent">
+                  {s.open ? `${fmtMoney(s.expected, { signed: true })}` : <span className="text-slate-600">—</span>}
+                </td>
+                {showBalances && (
+                  <td className={`text-right tabular-nums pr-3 ${balTone}`}>
+                    {bal ? fmtMoney(bal.balance_usd) : <span className="text-slate-600">—</span>}
+                  </td>
+                )}
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot className="bg-ink-800/60 font-semibold">
+          <tr className="border-t border-ink-700">
+            <td className="px-3 py-1.5">Total</td>
+            <td className="text-right tabular-nums">{totals.bets}</td>
+            <td className="text-right tabular-nums">{totals.won}–{totals.lost}{totals.open ? ` (·${totals.open}o)` : ''}</td>
+            <td className="text-right tabular-nums">{fmtMoney(totals.staked)}</td>
+            <td className={`text-right tabular-nums ${totals.profit > 0 ? 'text-good' : totals.profit < 0 ? 'text-bad' : ''}`}>
+              {fmtMoney(totals.profit, { signed: true })}
+            </td>
+            <td className="text-right tabular-nums text-accent">{fmtMoney(totals.expected, { signed: true })}</td>
+            {showBalances && (
+              <td className="text-right tabular-nums pr-3 text-slate-200">
+                {fmtMoney(bookBalances.reduce((s, b) => s + (b.balance_usd || 0), 0))}
+              </td>
+            )}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+
 // ---------- bet table -------------------------------------------------------
 
 const STATUS_STYLES = {
@@ -617,6 +743,7 @@ export default function PortfolioView() {
   const [bets, setBets] = useState([])
   const [paperBets, setPaperBets] = useState([])
   const [cashBets, setCashBets] = useState([])
+  const [bookBalances, setBookBalances] = useState([])
   const [summary, setSummary] = useState(null)
   const [projection, setProjection] = useState(null)
   const [paperOnly, setPaperOnly] = useState(true)
@@ -627,10 +754,11 @@ export default function PortfolioView() {
   async function load() {
     setLoading(true); setError(null)
     try {
-      const [s, b, p] = await Promise.all([
+      const [s, b, p, bb] = await Promise.all([
         api.portfolioSummary({ isPaper: paperOnly }),
         api.bets(1000),
         api.portfolioProjection({ matches: 64, stake: 20, edge: 0.06, betsPerMatch: 1.5 }),
+        fetch('/book-balances').then(r => r.ok ? r.json() : null).catch(() => null),
       ])
       setSummary(s)
       // filter to paper/real client-side too in case the bets endpoint returned both
@@ -642,6 +770,7 @@ export default function PortfolioView() {
       setPaperBets(allBets.filter(x => x.is_paper === 1))
       setCashBets(allBets.filter(x => x.is_paper !== 1))
       setProjection(p)
+      setBookBalances(bb?.books || [])
     } catch (e) { setError(e.message || String(e)) }
     finally { setLoading(false) }
   }
@@ -700,6 +829,12 @@ export default function PortfolioView() {
       {loading && <div className="mb-3 text-xs text-slate-500">Loading portfolio…</div>}
 
       <SummaryCards summary={summary} />
+
+      <PortfolioByBook
+        bets={bets}
+        bookBalances={bookBalances}
+        mode={paperOnly ? 'paper' : 'cash'}
+      />
 
       {/* Two-column layout: table+charts on left, calculator on right */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
