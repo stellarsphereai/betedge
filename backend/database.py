@@ -173,10 +173,13 @@ CREATE TABLE IF NOT EXISTS anomaly_log (
     -- (match × outcome × type × day) only fires once. Without this
     -- MARKET_CONSENSUS_DIVERGENCE was logging once per book per pipeline
     -- run — 84 entries for one match/day. NULL allowed for legacy rows.
+    -- The UNIQUE index is created in _backfill_anomaly_dedup after the
+    -- legacy-row backfill — creating it in SCHEMA would fail on existing
+    -- DBs because CREATE TABLE IF NOT EXISTS won't add the column to a
+    -- table that already exists, and the index would reference a missing
+    -- column at startup.
     dedup_key TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_dedup ON anomaly_log(dedup_key)
-    WHERE dedup_key IS NOT NULL;
 
 -- Per-book bankroll balances. Seeded from BALANCE_<BOOK> env vars on
 -- startup (INSERT OR IGNORE so existing balances persist across restarts).
