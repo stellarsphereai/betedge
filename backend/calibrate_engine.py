@@ -31,6 +31,12 @@ log = logging.getLogger("arb.calibrate_engine")
 RHO_GRID = (-0.20, -0.15, -0.10, -0.05, 0.0, 0.05)
 KO_DAMPING_GRID = (0.65, 0.75, 0.85, 0.95, 1.00)
 
+# Per-league calibrated-params files. WC is the original; UCL was added when
+# the model showed structural over-confidence on UCL knockouts.
+def _params_file(league_key: str) -> Path:
+    return Path(__file__).parent / f"model_params_{league_key}.json"
+
+
 # Where the calibrated WC params land. Loaded by wc_calibrate.load_wc_params()
 # at sync time so WC predictions use them automatically.
 WC_PARAMS_FILE = Path(__file__).parent / "model_params_wc.json"
@@ -141,9 +147,9 @@ async def grid_search_ucl_knockouts(rho_grid: tuple[float, ...] = RHO_GRID,
     }
 
 
-def save_wc_params(params: model.ModelParams, source: dict) -> dict:
-    """Persist tuned WC params to model_params_wc.json. The `source` dict is
-    saved alongside so we have provenance (which corpus, which Brier, etc.)."""
+def save_league_params(league_key: str, params: model.ModelParams, source: dict) -> dict:
+    """Persist tuned params to model_params_<league>.json. The `source` dict
+    rides along for provenance (which corpus, which Brier improvement, etc.)."""
     payload = {
         "params": {
             "rho": params.rho,
@@ -154,16 +160,18 @@ def save_wc_params(params: model.ModelParams, source: dict) -> dict:
         },
         "source": source,
     }
-    WC_PARAMS_FILE.write_text(json.dumps(payload, indent=2))
-    return {"saved_to": str(WC_PARAMS_FILE), "payload": payload}
+    path = _params_file(league_key)
+    path.write_text(json.dumps(payload, indent=2))
+    return {"saved_to": str(path), "payload": payload}
 
 
-def load_wc_params() -> model.ModelParams:
-    """Read the calibrated WC params from disk, falling back to defaults."""
-    if not WC_PARAMS_FILE.exists():
+def load_league_params(league_key: str) -> model.ModelParams:
+    """Read calibrated params for one league, falling back to defaults."""
+    path = _params_file(league_key)
+    if not path.exists():
         return model.DEFAULT_PARAMS
     try:
-        payload = json.loads(WC_PARAMS_FILE.read_text())
+        payload = json.loads(path.read_text())
         p = payload.get("params", {})
         return model.ModelParams(
             rho=p.get("rho", model.DEFAULT_PARAMS.rho),
@@ -173,9 +181,15 @@ def load_wc_params() -> model.ModelParams:
             ko_draw_damping=p.get("ko_draw_damping", model.DEFAULT_PARAMS.ko_draw_damping),
         )
     except Exception as e:
-        log.warning("failed to load WC params: %s — using defaults", e)
+        log.warning("failed to load %s params: %s — using defaults", league_key, e)
         return model.DEFAULT_PARAMS
 
 
-def has_wc_params() -> bool:
-    return WC_PARAMS_FILE.exists()
+def has_league_params(league_key: str) -> bool:
+    return _params_file(league_key).exists()
+
+
+# Backwards-compat aliases — wc_calibrate.py + scheduler import these names.
+save_wc_params = lambda params, source: save_league_params("wc", params, source)
+load_wc_params = lambda: load_league_params("wc")
+has_wc_params = lambda: has_league_params("wc")

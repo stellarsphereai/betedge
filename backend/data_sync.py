@@ -174,16 +174,26 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
     # WC additionally has calibrated rho/ko_damping persisted in
     # model_params_wc.json — overlay those onto the league_config baseline so
     # both signals apply.
+    import dataclasses
     model_params = league_config.params_for_league(league)
     if league == "world_cup":
         wc_overlay = calibrate_engine.load_wc_params()
         # Keep league_config's gamma + season_blend, take rho/ko_damping
         # from the WC calibrated overlay.
-        import dataclasses
         model_params = dataclasses.replace(
             model_params,
             rho=wc_overlay.rho,
             ko_draw_damping=wc_overlay.ko_draw_damping,
+        )
+    elif league == "ucl" and calibrate_engine.has_league_params("ucl"):
+        # Same overlay shape for UCL — calibrated rho + ko_damping from
+        # grid_search_ucl_knockouts. The model's structural over-confidence on
+        # UCL knockouts is exactly what these params are tuned to fix.
+        ucl_overlay = calibrate_engine.load_league_params("ucl")
+        model_params = dataclasses.replace(
+            model_params,
+            rho=ucl_overlay.rho,
+            ko_draw_damping=ucl_overlay.ko_draw_damping,
         )
 
     async with httpx.AsyncClient() as client:
@@ -285,8 +295,22 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                 season_avg_for=a_season_for,
                 season_avg_against=a_season_against,
             )
-            knockout = league == "world_cup" and _is_knockout(fx.get("league", {}).get("round"))
-            prediction = model.predict(home_form, away_form, knockout=knockout, params=model_params, league_id=league_id)
+            # Knockout detection now also applies to UCL / UEL — the
+            # ko_draw_damping path (draw-leak to home/away) and the
+            # season-blend tightening below both rely on it.
+            knockout = (
+                league in ("world_cup", "ucl", "uel")
+                and _is_knockout(fx.get("league", {}).get("round"))
+            )
+            # Knockout-stage tightening for UCL/UEL: the 10-game form window
+            # is dominated by group-stage matches where elite teams ran up
+            # scores against weaker opponents. Knockout legs are tactically
+            # tighter and books prior-weight that. Lean more on the season
+            # average (0.30 recent, 0.70 season) for these matches.
+            match_params = model_params
+            if knockout and league in ("ucl", "uel"):
+                match_params = dataclasses.replace(match_params, season_blend=0.30)
+            prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
 
             match_id = f"af-{fx['fixture']['id']}"
 
@@ -314,8 +338,8 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             # API. Weighted attack/defense are recomputed here from the same
             # arrays + game_weights so they stay consistent with what the
             # model actually saw.
-            home_atk, home_def = model.team_strengths(home_form, model_params)
-            away_atk, away_def = model.team_strengths(away_form, model_params)
+            home_atk, home_def = model.team_strengths(home_form, match_params)
+            away_atk, away_def = model.team_strengths(away_form, match_params)
             with db() as conn:
                 conn.execute(
                     """
@@ -375,8 +399,8 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                      prediction.home_xg, prediction.away_xg, prediction.confidence,
                      _json.dumps(prediction.score_matrix),
                      _json.dumps(penalties_combined),
-                     model_params.home_gamma,
-                     model_params.season_blend,
+                     match_params.home_gamma,
+                     match_params.season_blend,
                      anomaly_flagged_int,
                      _json.dumps(home_form.xg_for),
                      _json.dumps(home_form.xg_against),
