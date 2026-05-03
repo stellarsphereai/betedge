@@ -95,6 +95,7 @@ def render(
     """
     import anomaly  # local import keeps this module standalone-importable
     excluded_ids = anomaly.excluded_match_ids_today()
+    excluded_today = anomaly.recent(limit=200)
     today_bets = _filter_unflagged((ev_payload or {}).get("bets", []) or [], excluded_ids)[:max_bets]
     week_bets = _filter_unflagged((week_payload or {}).get("bets", []) or [], excluded_ids)[:max_bets]
     # Don't show the same match twice across sections — the today section wins.
