@@ -791,20 +791,35 @@ async def get_fixtures(league: str | None = None, limit: int = Query(50, ge=1, l
     return {"count": len(rows), "fixtures": [dict(r) for r in rows]}
 
 
+async def _digest_payloads():
+    """Two-section digest: today (next 24h) + look-ahead (24h-7d)."""
+    today = await get_best_bets(
+        league="all", bankroll=BANKROLL, min_edge=MIN_EDGE, limit=3,
+        kickoff_within_hours=24, kickoff_after_hours=0,
+    )
+    week = await get_best_bets(
+        league="all", bankroll=BANKROLL, min_edge=MIN_EDGE, limit=3,
+        kickoff_within_hours=168, kickoff_after_hours=24,
+    )
+    stats = await get_stats()
+    return today, week, stats
+
+
 @app.get("/digest-preview")
 async def digest_preview():
-    # Multi-league top 3 — same merge logic as /best-bets
-    best = await get_best_bets(league="all", bankroll=BANKROLL, min_edge=MIN_EDGE, limit=3)
-    stats = await get_stats()
-    subject, body = digest.render({"bets": best["bets"]}, stats)
+    today, week, stats = await _digest_payloads()
+    subject, body = digest.render(
+        {"bets": today["bets"]}, stats, week_payload={"bets": week["bets"]},
+    )
     return {"subject": subject, "body": body, "to": os.getenv("DIGEST_EMAIL")}
 
 
 @app.post("/send-digest")
 async def send_digest():
-    best = await get_best_bets(league="all", bankroll=BANKROLL, min_edge=MIN_EDGE, limit=3)
-    stats = await get_stats()
-    subject, body = digest.render({"bets": best["bets"]}, stats)
+    today, week, stats = await _digest_payloads()
+    subject, body = digest.render(
+        {"bets": today["bets"]}, stats, week_payload={"bets": week["bets"]},
+    )
     result = digest.send(subject, body)
     if not result["sent"]:
         raise HTTPException(502, result["reason"])
@@ -1127,6 +1142,12 @@ async def get_best_bets(
         description="Only consider matches kicking off within this many hours of now. "
                     "Default 48h so 'best bets' means 'imminent' rather than 'this week'.",
     ),
+    kickoff_after_hours: int = Query(
+        0, ge=0, le=336,
+        description="Lower bound — only consider matches kicking off AT LEAST this many "
+                    "hours from now. Use with kickoff_within_hours to slice 'today' (0-24) "
+                    "vs 'next week' (24-168).",
+    ),
 ):
     """Top-N best bets across one or all tracked leagues, ranked by edge.
 
@@ -1140,7 +1161,8 @@ async def get_best_bets(
     league = (league or "all").lower()
     leagues = LEAGUES_FOR_BEST_BETS if league == "all" else (league,)
     now = datetime.now(_tz.utc)
-    cutoff = now + timedelta(hours=kickoff_within_hours)
+    lower = now + timedelta(hours=kickoff_after_hours)
+    upper = now + timedelta(hours=kickoff_within_hours)
 
     def _within_window(commence_time: str | None) -> bool:
         if not commence_time:
@@ -1149,7 +1171,7 @@ async def get_best_bets(
             dt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
         except ValueError:
             return False
-        return now <= dt <= cutoff
+        return lower <= dt <= upper
 
     # Dedupe by (match_id, market, market_line, outcome) — /ev-bets can return
     # the same bet row more than once across its internal market passes; keep

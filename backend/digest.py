@@ -39,20 +39,7 @@ _MEDALS = ["🥇 BEST BET", "🥈 SECOND BEST", "🥉 THIRD BEST"]
 _LEAGUE_LABEL = {"epl": "EPL", "ucl": "UCL", "uel": "EL", "world_cup": "World Cup"}
 
 
-def render(ev_payload: dict, stats_payload: dict, max_bets: int = 3) -> tuple[str, str]:
-    """Return (subject, body).
-
-    `ev_payload['bets']` is expected to already be the cross-league merged
-    + anomaly-filtered top-N (caller produces it via /best-bets-style merge).
-    We re-apply the anomaly filter defensively so callers that pass raw
-    /ev-bets output still get sane behavior.
-    """
-    import anomaly  # local import keeps this module standalone-importable
-    bets_all = (ev_payload or {}).get("bets", []) or []
-    excluded_ids = anomaly.excluded_match_ids_today()
-    excluded_today = anomaly.recent(limit=200)
-    # Filter out anomaly-flagged bets entirely from the digest's main list,
-    # plus any bet that already self-reports an excluding anomaly_flag.
+def _filter_unflagged(bets_all: list[dict], excluded_ids: set[str]) -> list[dict]:
     def _is_flagged(b: dict) -> bool:
         if b.get("match_id") in excluded_ids:
             return True
@@ -60,34 +47,16 @@ def render(ev_payload: dict, stats_payload: dict, max_bets: int = 3) -> tuple[st
             if f.get("excludes_bet") or f.get("downgrades_to_low"):
                 return True
         return False
-    bets = [b for b in bets_all if not _is_flagged(b)][:max_bets]
-    league_mode = (stats_payload or {}).get("league_mode", "epl")
-    bankroll = (stats_payload or {}).get("bankroll", 0)
-    weekly = (stats_payload or {}).get("weekly", {}) or {}
-    accuracy_data = (stats_payload or {}).get("accuracy", {}) or {}
+    return [b for b in bets_all if not _is_flagged(b)]
 
-    now = datetime.now(timezone.utc)
-    today_short = f"{now.strftime('%b')} {now.day}"
-    n_bets = len(bets)
 
-    # Subject reflects the leagues actually represented in today's top picks.
-    leagues_in_top: list[str] = []
-    seen: set[str] = set()
-    for b in bets:
-        lg = (b.get("league") or "").lower()
-        if lg and lg not in seen:
-            seen.add(lg)
-            leagues_in_top.append(_LEAGUE_LABEL.get(lg, lg.upper()))
-    if leagues_in_top:
-        across = " + ".join(leagues_in_top)
-        subject = f"BetEdge — {today_short} — {n_bets} bet{'s' if n_bets != 1 else ''} ready across {across}"
-    else:
-        subject = f"BetEdge — {today_short} — no +EV bets today"
-
-    lines: list[str] = ["=== TODAY'S BETS ==="]
+def _render_bet_block(bets: list[dict], max_bets: int, league_mode: str) -> list[str]:
+    """Render the medal/team/bet block for one section. Empty list → '(none)'."""
+    lines: list[str] = []
     if not bets:
         lines.append("(no +EV bets at the current edge threshold)")
-    for i, b in enumerate(bets):
+        return lines
+    for i, b in enumerate(bets[:max_bets]):
         bookmaker = b.get("best_book") or b.get("book")
         odds = b.get("best_odds") or b.get("decimal_odds")
         edge_pct = (b.get("edge") or 0) * 100
@@ -99,19 +68,73 @@ def render(ev_payload: dict, stats_payload: dict, max_bets: int = 3) -> tuple[st
         medal = _MEDALS[i] if i < len(_MEDALS) else f"#{i + 1}"
         lg_key = (b.get("league") or league_mode).lower()
         lg_label = _LEAGUE_LABEL.get(lg_key, lg_key.upper())
-
         lines.append(f"\n{medal} — {lg_label}")
         lines.append(
             f"{b.get('home_team')} vs {b.get('away_team')} — {_fmt_time(b.get('commence_time'))}"
         )
         lines.append(f"Bet: {outcome_label} at {odds} on {bookmaker}")
-        lines.append(
-            f"Stake: ${stake:.0f} | Edge: {edge_pct:.2f}% | Timing: {timing}"
-        )
-        # Model prob the bet relies on (the side we're backing)
+        lines.append(f"Stake: ${stake:.0f} | Edge: {edge_pct:.2f}% | Timing: {timing}")
         lines.append(f"Model: {b.get('model_prob', 0)*100:.1f}% (own outcome)")
         lines.append(f"Confidence: {b.get('confidence', 'MEDIUM')}")
         lines.append("---")
+    return lines
+
+
+def render(
+    ev_payload: dict,
+    stats_payload: dict,
+    max_bets: int = 3,
+    week_payload: dict | None = None,
+) -> tuple[str, str]:
+    """Return (subject, body).
+
+    `ev_payload['bets']` is the imminent-window picks ('today's matches').
+    `week_payload['bets']` is the look-ahead picks (matches kicking off
+    after the today window — typically next 24h to 7 days). Optional
+    for backwards compatibility.
+    """
+    import anomaly  # local import keeps this module standalone-importable
+    excluded_ids = anomaly.excluded_match_ids_today()
+    today_bets = _filter_unflagged((ev_payload or {}).get("bets", []) or [], excluded_ids)[:max_bets]
+    week_bets = _filter_unflagged((week_payload or {}).get("bets", []) or [], excluded_ids)[:max_bets]
+    # Don't show the same match twice across sections — the today section wins.
+    today_match_ids = {b.get("match_id") for b in today_bets}
+    week_bets = [b for b in week_bets if b.get("match_id") not in today_match_ids]
+
+    league_mode = (stats_payload or {}).get("league_mode", "epl")
+    bankroll = (stats_payload or {}).get("bankroll", 0)
+    weekly = (stats_payload or {}).get("weekly", {}) or {}
+    accuracy_data = (stats_payload or {}).get("accuracy", {}) or {}
+
+    now = datetime.now(timezone.utc)
+    today_short = f"{now.strftime('%b')} {now.day}"
+
+    # Subject reflects today's section primarily; fall back to look-ahead if today is empty.
+    leagues_in_top: list[str] = []
+    seen: set[str] = set()
+    for b in today_bets or week_bets:
+        lg = (b.get("league") or "").lower()
+        if lg and lg not in seen:
+            seen.add(lg)
+            leagues_in_top.append(_LEAGUE_LABEL.get(lg, lg.upper()))
+    n_today = len(today_bets)
+    if n_today:
+        across = " + ".join(leagues_in_top) if leagues_in_top else ""
+        subject = f"BetEdge — {today_short} — {n_today} bet{'s' if n_today != 1 else ''} ready across {across}".rstrip(" across ")
+    elif week_bets:
+        subject = f"BetEdge — {today_short} — no bets today; {len(week_bets)} look-ahead pick{'s' if len(week_bets) != 1 else ''}"
+    else:
+        subject = f"BetEdge — {today_short} — no +EV bets in window"
+
+    lines: list[str] = ["=== BEST BETS — TODAY'S MATCHES ==="]
+    lines.extend(_render_bet_block(today_bets, max_bets, league_mode))
+
+    lines.append("")
+    lines.append("=== BEST BETS — LOOKING AHEAD (next 7 days) ===")
+    if week_payload is None:
+        lines.append("(week-ahead view not provided)")
+    else:
+        lines.extend(_render_bet_block(week_bets, max_bets, league_mode))
 
     lines.append("")
     lines.append("=== BANKROLL STATUS ===")
