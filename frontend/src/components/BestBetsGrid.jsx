@@ -175,11 +175,20 @@ function BetCard({ rank, bet, onClick }) {
   )
 }
 
-export default function BestBetsGrid({ refreshKey, onJumpToMatch }) {
-  const [filter, setFilter] = useState('all')
+export default function BestBetsGrid({ refreshKey, onJumpToMatch, headerLeague }) {
+  // Initial filter follows the header's league switcher, but the user can
+  // override via the pills below to widen to 'all' or narrow to a different
+  // league without touching the rest of the dashboard.
+  const [filter, setFilter] = useState(headerLeague || 'all')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  // When the header league changes, sync the grid filter so the hero
+  // section reflects the league the rest of the page is showing.
+  useEffect(() => {
+    if (headerLeague) setFilter(headerLeague)
+  }, [headerLeague])
 
   useEffect(() => {
     let active = true

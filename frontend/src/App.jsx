@@ -235,6 +235,7 @@ export default function App() {
       <BestBetsGrid
         refreshKey={lastFetched?.getTime?.()}
         onJumpToMatch={scrollToMatch}
+        headerLeague={league}
       />
 
       <StatsRow
