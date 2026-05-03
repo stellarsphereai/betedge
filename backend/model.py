@@ -264,10 +264,13 @@ def predict(
             away_win += leak * (away_win / denom)
         draw = damped
 
+    # Confidence rating reflects DATA quality, not roster quality. Top-scorer-
+    # out is already priced into the prediction via injured_scorer_penalty
+    # (-6% on attack), so don't double-count it here. A 3-day rest difference
+    # (midweek → weekend EPL) is common — use ≤3, not <3.
     games = min(len(home.xg_for), len(away.xg_for))
-    no_inj = not (home.top_scorer_out or away.top_scorer_out)
-    rested = abs(rest_diff) < 3
-    if games >= 5 and no_inj and rested:
+    rested = abs(rest_diff) <= 3
+    if games >= 5 and rested:
         confidence = "HIGH"
     elif games >= 3:
         confidence = "MEDIUM"
