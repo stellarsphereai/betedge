@@ -1269,8 +1269,59 @@ async def book_balances():
 
 @app.get("/match-analysis/{match_id}")
 async def match_analysis_get(match_id: str, force: bool = False):
-    """Per-match Haiku 4.5 analysis. Cached 30 min in SQLite; daily-cap'd."""
-    return await match_analysis.analyze_match(match_id, force=force)
+    """Per-match Haiku 4.5 analysis. Cached 30 min in SQLite; daily-cap'd.
+
+    Gathers operational context before calling Claude: every +EV bet on
+    this match (so Claude analyzes specific recommendations), bets already
+    logged on this match today (concentration risk), today's total bet
+    count (daily-limit awareness), and current book balances. Without this
+    context Claude can only describe the match — with it, Claude can give
+    a concrete one-bet recommendation.
+    """
+    # Look up the league + EV bets for this match.
+    with db() as conn:
+        pred = conn.execute(
+            "SELECT league FROM model_predictions WHERE match_id = ?", (match_id,)
+        ).fetchone()
+    league = (pred["league"] if pred else None) or LEAGUE_MODE
+    ev_bets_for_match: list[dict] = []
+    try:
+        ev_resp = await get_ev_bets(bankroll=BANKROLL, min_edge=MIN_EDGE, league=league)
+        ev_bets_for_match = [
+            b for b in (ev_resp.get("bets") or []) if b.get("match_id") == match_id
+        ]
+    except HTTPException:
+        pass  # league not configured — Claude will see "no EV bets" and recommend SKIP
+
+    # Existing bets on this match (any status, any mode).
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, bet_type, market, market_line, book, odds_at_placement,
+                   stake, status, is_paper, timestamp
+            FROM bets_placed WHERE match_id = ?
+            ORDER BY timestamp DESC
+            """,
+            (match_id,),
+        ).fetchall()
+    existing_bets = [dict(r) for r in rows]
+
+    # Today's logged bets across all matches (for daily-limit awareness).
+    with db() as conn:
+        n_row = conn.execute(
+            "SELECT COUNT(*) AS n FROM bets_placed WHERE date(timestamp) = date('now')"
+        ).fetchone()
+    todays_bets_count = int(n_row["n"] if n_row else 0)
+
+    book_balances = book_balance.get_all()
+
+    return await match_analysis.analyze_match(
+        match_id, force=force,
+        ev_bets=ev_bets_for_match,
+        existing_bets=existing_bets,
+        todays_bets_count=todays_bets_count,
+        book_balances=book_balances,
+    )
 
 
 # --- Portfolio ---------------------------------------------------------------

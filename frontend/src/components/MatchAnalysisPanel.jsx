@@ -2,21 +2,24 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 
 // Section keys match the headings emitted by the system prompt (without
-// the leading emoji). Order here is the display order.
+// the leading emoji). Order here is the display order. MY RECOMMENDATION
+// is rendered separately with bigger / bolder treatment because it's the
+// actionable bottom line.
 const SECTIONS = [
   { key: 'QUICK SUMMARY',          label: '🔍 Quick summary' },
-  { key: 'WHAT THE MODEL SEES',    label: '⚽ What the model sees' },
-  { key: 'DO THE NUMBERS MAKE SENSE', label: '🔢 Do the numbers make sense?' },
-  { key: 'BET BY BET VERDICT',     label: '✅ Bet by bet verdict' },
-  { key: 'PROBLEMS FOUND',         label: '🚨 Problems found' },
-  { key: 'FINAL VERDICT',          label: '🎯 Final verdict' },
+  { key: 'TEAM FORM',              label: '⚽ Team form' },
+  { key: 'XG CHECK',               label: '🔢 xG check' },
+  { key: 'BET BY BET ANALYSIS',    label: '✅ Bet by bet analysis' },
+  { key: 'ANOMALY FLAGS',          label: '🚨 Anomaly flags' },
 ]
+const RECOMMENDATION_KEY = 'MY RECOMMENDATION'
 
 // Line-based parser. A header line is one that contains a section key and is
 // short enough to be a heading (not a paragraph that happens to mention the
 // phrase). Tolerates emoji prefixes, markdown, and trailing parentheticals.
 function parseSections(text) {
   if (!text) return {}
+  const allKeys = [...SECTIONS.map(s => s.key), RECOMMENDATION_KEY]
   const lines = text.split('\n')
   const result = {}
   let currentKey = null
@@ -28,15 +31,14 @@ function parseSections(text) {
   }
   for (const line of lines) {
     const upper = line.toUpperCase()
-    // Strip leading non-word chars (emojis, *, #, whitespace) before matching.
+    // Strip leading non-word chars (emojis, ═, *, #, whitespace) before matching.
     const stripped = upper.replace(/^[^A-Z0-9]+/, '')
     let matched = null
-    for (const s of SECTIONS) {
-      if (stripped.startsWith(s.key)) {
-        // Heading-like: line is short or the rest is just punctuation/parens.
-        const rest = line.slice(line.toUpperCase().indexOf(s.key) + s.key.length).trim()
+    for (const k of allKeys) {
+      if (stripped.startsWith(k)) {
+        const rest = line.slice(line.toUpperCase().indexOf(k) + k.length).trim()
         if (rest.length <= 60) {
-          matched = s.key
+          matched = k
           break
         }
       }
@@ -46,6 +48,8 @@ function parseSections(text) {
       currentKey = matched
       buffer = []
     } else if (currentKey) {
+      // Skip the equals-line dividers around MY RECOMMENDATION
+      if (/^[═=]+$/.test(line.trim())) continue
       buffer.push(line)
     }
   }
@@ -155,9 +159,9 @@ export default function MatchAnalysisPanel({ matchId, matchLabel, onClose }) {
 
       {data && !loading && (
         <>
-          {data.critical_flags && sections['PROBLEMS FOUND'] && (
+          {data.critical_flags && sections['ANOMALY FLAGS'] && (
             <CopyToClaudeCodeBox
-              problemText={sections['PROBLEMS FOUND'].replace(/Fix this issue\?[^\n]*/i, '').trim()}
+              problemText={sections['ANOMALY FLAGS'].replace(/Fix this issue\?[^\n]*/i, '').trim()}
               matchLabel={matchLabel}
             />
           )}
@@ -166,17 +170,16 @@ export default function MatchAnalysisPanel({ matchId, matchLabel, onClose }) {
             {SECTIONS.map(s => {
               const body = sections[s.key]
               if (!body) return null
-              const isProblems = s.key === 'PROBLEMS FOUND'
-              const isFinal = s.key === 'FINAL VERDICT'
-              const isWide = isFinal || isProblems || s.key === 'QUICK SUMMARY'
-              const cleanedBody = isProblems
+              const isAnomaly = s.key === 'ANOMALY FLAGS'
+              const isWide = isAnomaly || s.key === 'QUICK SUMMARY' || s.key === 'BET BY BET ANALYSIS'
+              const cleanedBody = isAnomaly
                 ? body.replace(/Fix this issue\?[^\n]*/i, '').trim()
                 : body
               return (
                 <div
                   key={s.key}
                   className={`rounded-md border p-3 ${
-                    isProblems ? 'border-bad-soft bg-bad-soft/20' : 'border-ink-700 bg-ink-950/60'
+                    isAnomaly ? 'border-bad-soft bg-bad-soft/20' : 'border-ink-700 bg-ink-950/60'
                   } ${isWide ? 'md:col-span-2' : ''}`}
                 >
                   <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</div>
@@ -185,6 +188,18 @@ export default function MatchAnalysisPanel({ matchId, matchLabel, onClose }) {
               )
             })}
           </div>
+
+          {sections[RECOMMENDATION_KEY] && (
+            <div className="mt-4 rounded-xl border-2 border-accent bg-gradient-to-br from-accent-soft to-ink-900/60 p-4">
+              <div className="flex items-center gap-2 mb-2 pb-2 border-b border-accent/40">
+                <span className="text-lg">🎯</span>
+                <span className="text-sm font-bold tracking-wider text-accent uppercase">My Recommendation</span>
+              </div>
+              <pre className="text-sm text-slate-100 whitespace-pre-wrap leading-relaxed font-sans">
+                {sections[RECOMMENDATION_KEY]}
+              </pre>
+            </div>
+          )}
 
           <div className="mt-3 text-[10px] text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Model: {data.claude_model_used}</span>

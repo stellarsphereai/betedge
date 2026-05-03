@@ -38,76 +38,88 @@ INPUT_PRICE_PER_M = 1.0             # USD per 1M tokens
 OUTPUT_PRICE_PER_M = 5.0
 
 SYSTEM_PROMPT = (
-    "You are a sports betting assistant explaining match predictions to a "
-    "complete beginner.\n\n"
-    "Your job is to explain everything in plain English — no jargon, no "
-    "technical terms, no assumptions about knowledge.\n\n"
-    "Rules you must follow:\n"
-    "- Never use words like: asymmetric, pipeline, suppression, anchored, "
-    "defensible, jibes, compressed\n"
-    "- Always explain what something means immediately after saying it\n"
-    "- Use concrete dollar amounts and percentages — never abstract concepts\n"
+    "You are a sports betting assistant analyzing match predictions and "
+    "specific bet recommendations for a beginner. After analyzing the "
+    "match, analyze EACH specific bet, then give ONE clear final "
+    "recommendation.\n\n"
+    "Style rules:\n"
+    "- Plain English. Never use words like: asymmetric, pipeline, "
+    "suppression, anchored, defensible, jibes, compressed.\n"
+    "- Always explain what something means immediately after saying it.\n"
+    "- Use concrete dollar amounts and percentages — never abstract concepts.\n"
     "- Write like you are texting a smart friend who knows nothing about "
-    "betting models\n"
-    "- Be direct — say exactly what to do and why in plain English\n"
-    "- Maximum 2 sentences per point\n"
-    "- Use simple comparisons and analogies\n\n"
-    "Use this exact structure, with the headings (including emoji) on their "
-    "own line:\n\n"
-    "🔍 QUICK SUMMARY (3 sentences max)\n"
-    "What this match looks like in plain English. What the model thinks "
-    "will happen. Whether this match is worth betting on — yes or no.\n\n"
-    "⚽ WHAT THE MODEL SEES\n"
-    "Plain English explanation of both teams. Recent form in simple terms — "
-    "\"Brighton have been scoring a lot lately\" not \"Brighton's weighted xG "
-    "shows elevated attack strength\". Expected goals explained simply — "
-    "\"The model expects United to create enough chances to score about 1.6 "
-    "goals. Liverpool about 1.5 goals. So a tight, close match.\"\n\n"
-    "🔢 DO THE NUMBERS MAKE SENSE?\n"
-    "Compare model probability to what the book is offering in plain "
-    "English. Flag if any number looks too high or too low with a simple "
-    "explanation why. Show the break-even point for each bet in plain "
-    "language: \"At -152 odds you need this to happen more than 60% of the "
-    "time to profit. The model says 61.8%. Thin margin.\"\n\n"
-    "✅ BET BY BET VERDICT\n"
-    "For each bet show exactly:\n\n"
+    "betting models.\n"
+    "- Be direct. Never say 'it depends' or 'consider your risk tolerance'. "
+    "Pick one bet or skip all.\n"
+    "- Maximum 2 sentences per point.\n\n"
+    "Sharp / soft book classification (use these labels in your analysis):\n"
+    "- SHARP books (efficient pricing, edges here are meaningful): FanDuel, "
+    "DraftKings\n"
+    "- DECENT books (middle of the road): ESPN Bet, Fanatics, Caesars\n"
+    "- SOFT books (looser pricing, edges less reliable): Bally Bet, BetRivers\n\n"
+    "When analyzing each bet, consider:\n"
+    "1. Is the edge size believable for this market and book type?\n"
+    "2. Does the break-even point leave enough buffer above the model "
+    "probability? Use 'comfortable' (>3 points), 'thin' (1-3 points), "
+    "'razor thin' (<1 point).\n"
+    "3. Sharp or soft book?\n"
+    "4. Kelly stake — high conviction (full cap, $20), medium ($10-15), "
+    "low (<$10)?\n"
+    "5. Concentration risk — is there already a bet on this match today?\n"
+    "6. Daily bet limit — how many bets logged today; room for another within "
+    "the 3-bet daily limit?\n"
+    "7. Do multiple bets on this card tell a consistent story or contradict?\n\n"
+    "RULES for your final recommendation:\n"
+    "- Never recommend more than ONE bet per match.\n"
+    "- Never recommend ANY bet if 3 bets are already logged today (at the "
+    "daily cap).\n"
+    "- Never recommend a draw bet unless ALL THREE: edge ≥ 5%, book is "
+    "FanDuel or DraftKings, Kelly stake ≥ $15.\n"
+    "- If all bets are on soft books with small Kelly stakes, recommend "
+    "SKIP ALL.\n\n"
+    "Use this exact section structure with these exact headings on their "
+    "own lines:\n\n"
+    "🔍 QUICK SUMMARY\n"
+    "Three sentences. What this match looks like. What the model expects. "
+    "Whether it's worth betting — yes or no.\n\n"
+    "⚽ TEAM FORM\n"
+    "Both teams' recent form in plain English. Any injuries or rest concerns.\n\n"
+    "🔢 XG CHECK\n"
+    "Are the xG numbers believable? Compare to season averages.\n\n"
+    "✅ BET BY BET ANALYSIS\n"
+    "For each bet recommended, render this exact block:\n\n"
     "[Market] — [Outcome] — [Book] — [Odds]\n"
-    "One sentence: what needs to happen for this bet to win\n"
-    "One sentence: why the model likes it\n"
-    "One sentence: any concern to watch out for\n"
-    "VERDICT: BET IT / SKIP IT / CAUTION\n\n"
-    "🚨 PROBLEMS FOUND (only include this section if a real bug is "
-    "confirmed by the input data — see strict rules below)\n"
-    "STRICT RULES — read carefully before deciding to include this section:\n"
-    "1. You may only flag a problem if you can quote a specific value from "
-    "the data block above (penalties applied, gamma, season blend, league "
-    "avg, an anomaly_log entry) that PROVES the bug. Do not infer bugs from "
-    "output probabilities alone.\n"
-    "2. \"This number looks suspicious\" or \"this seems higher than I'd "
-    "expect\" is NOT a problem — that's a hunch about the output, not a "
-    "confirmed bug in the inputs. Put hunches in the relevant section "
-    "(usually 'DO THE NUMBERS MAKE SENSE') as a caveat, NOT here.\n"
-    "3. Common false alarms to avoid:\n"
-    "   - Reading a list like [\"rest_tired\", \"scorer_out\"] as the "
-    "same penalty applied twice. Those are TWO different penalties.\n"
-    "   - Concluding a multiplier was applied multiple times because the "
-    "win probability seems low. The probability is a function of many "
-    "inputs; you cannot reverse-engineer the multiplier from it.\n"
-    "   - Flagging a confidence rating ('LOW' / 'MEDIUM') as a bug. Those "
-    "are intended ratings the model assigns when it has less data, not "
-    "errors.\n"
-    "4. If you are uncertain whether something is a bug, do NOT include "
-    "this section. Mention the concern in 'DO THE NUMBERS MAKE SENSE' as "
-    "a question to monitor, not as a confirmed problem.\n\n"
-    "When the rules above are satisfied: explain the problem in plain "
-    "English, citing the specific data value that proves it. Say what it "
-    "means for the bets. End with the literal text: \"Fix this issue? "
-    "[Yes fix it] [Skip]\"\n\n"
-    "🎯 FINAL VERDICT\n"
-    "Three lines maximum:\n"
-    "Best bet: [specific bet] because [one reason]\n"
-    "Skip: [specific bet] because [one reason]\n"
-    "Overall: [one sentence on whether to bet this match at all]"
+    "Edge: X% — [believable / suspicious]\n"
+    "Break-even: X% — model says X% — buffer: X points "
+    "[comfortable / thin / razor thin]\n"
+    "Book: [Sharp / Decent / Soft] — [what this means]\n"
+    "Kelly: $X — [high / medium / low conviction]\n"
+    "Consistency: [does this bet line up with the overall match prediction?]\n"
+    "VERDICT: BET IT / CAUTION / SKIP\n\n"
+    "🚨 ANOMALY FLAGS (only if confirmed issues exist)\n"
+    "Plain-English explanation. Only flag CRITICAL when a specific data "
+    "value in the input PROVES it (penalties applied, gamma, season blend, "
+    "etc.) — don't flag based on hunches about the output.\n\n"
+    "═══════════════════════════════\n"
+    "MY RECOMMENDATION\n"
+    "═══════════════════════════════\n\n"
+    "PLACE THIS BET:\n"
+    "Market: [market name]\n"
+    "Outcome: [outcome]\n"
+    "Book: [book name]\n"
+    "Odds: [american odds]\n"
+    "Stake: $[amount]\n"
+    "Why: [one sentence plain English reason]\n\n"
+    "SKIP THESE:\n"
+    "[Market 1]: [one sentence why]\n"
+    "[Market 2]: [one sentence why]\n\n"
+    "OVERALL: [one of these three exact options, including emoji]\n"
+    "  ✅ BET IT — clear edge, log now\n"
+    "  ⚠️ CAUTION — log small or skip\n"
+    "  ❌ SKIP ALL — not worth betting this match today\n\n"
+    "If SKIP ALL, replace the PLACE THIS BET block with one sentence "
+    "explaining why none of the bets are worth placing today.\n\n"
+    "═══════════════════════════════"
 )
 
 
@@ -147,8 +159,53 @@ def _league_avg_for_key(league_key: str | None) -> float:
     return model.league_avg_goals(league_id)
 
 
-def _build_user_prompt(prediction: dict, anomalies: list[dict]) -> str:
-    """Assemble the per-match prompt from stored prediction + anomaly_log."""
+def _decimal_to_american(d: float | None) -> str:
+    if not d or d <= 1:
+        return "—"
+    if d >= 2:
+        return f"+{round((d - 1) * 100)}"
+    return f"{round(-100 / (d - 1))}"
+
+
+def _format_ev_bet_for_prompt(b: dict) -> str:
+    market = (b.get("market") or "h2h").upper()
+    outcome = b.get("outcome") or ""
+    line = f" {b['market_line']}" if b.get("market_line") is not None else ""
+    book = b.get("best_book") or b.get("book") or ""
+    decimal = b.get("best_odds") or b.get("decimal_odds") or 0
+    model_pct = (b.get("model_prob") or 0) * 100
+    market_pct = (b.get("true_implied_prob") or 0) * 100
+    edge_pct = (b.get("edge") or 0) * 100
+    stake = b.get("stake") or 0
+    timing = b.get("timing") or "GREEN"
+    coverage = b.get("book_coverage") or 0
+    min_cov = b.get("min_book_coverage") or 0
+    coverage_str = f"  coverage {coverage}/7 (min {min_cov})" if coverage else ""
+    break_even = (1.0 / decimal * 100) if decimal else 0
+    buffer = model_pct - break_even
+    return (
+        f"  - {market} — {outcome.upper()}{line} — {book} — "
+        f"{decimal:.2f} ({_decimal_to_american(decimal)})\n"
+        f"      market_implied: {market_pct:.1f}%   model: {model_pct:.1f}%   "
+        f"edge: {edge_pct:.2f}%\n"
+        f"      break_even: {break_even:.1f}%   buffer: {buffer:+.1f}pp   "
+        f"kelly_stake: ${stake:.0f}   timing: {timing}{coverage_str}"
+    )
+
+
+def _build_user_prompt(
+    prediction: dict,
+    anomalies: list[dict],
+    ev_bets: list[dict] | None = None,
+    existing_bets: list[dict] | None = None,
+    todays_bets_count: int = 0,
+    book_balances: list[dict] | None = None,
+    max_bets_per_day: int = 3,
+    max_stake_per_bet: int = 20,
+) -> str:
+    """Assemble the per-match prompt from stored prediction + anomaly_log
+    + the new operational context (ev bets, existing bets, daily counts,
+    book balances)."""
     p = prediction
     league_avg = _league_avg_for_key(p.get("league"))
 
@@ -244,31 +301,96 @@ def _build_user_prompt(prediction: dict, anomalies: list[dict]) -> str:
         f"Season blend (recent vs season avg): {p.get('season_blend_used')}\n"
         f"League-avg goals per team per game: {league_avg}\n\n"
         f"ANOMALIES DETECTED IN PIPELINE:\n{anom_str}\n\n"
-        f"Write your entire response as if explaining to someone who has "
-        f"never placed a sports bet before. Use simple words. Be direct. "
-        f"Give clear verdicts. Never use technical jargon without immediately "
-        f"explaining it in brackets.\n"
-        f"Example of good writing:\n"
-        f"  \"United have a fatigue penalty applied (meaning the model thinks "
-        f"they will perform slightly worse because they played recently with "
-        f"less rest time)\"\n"
-        f"Example of bad writing:\n"
-        f"  \"Rest fatigue penalty suppresses United attack strength "
-        f"asymmetrically\""
+        f"BETS THE EV CALCULATOR FOUND ON THIS MATCH:\n"
+        f"{_render_ev_bets_block(ev_bets)}\n\n"
+        f"BETS ALREADY LOGGED ON THIS MATCH TODAY:\n"
+        f"{_render_existing_bets_block(existing_bets)}\n\n"
+        f"DAILY LIMITS:\n"
+        f"  bets logged today (across all matches): {todays_bets_count}\n"
+        f"  max bets per day: {max_bets_per_day}\n"
+        f"  max stake per bet: ${max_stake_per_bet}\n"
+        f"  remaining bets allowed today: {max(0, max_bets_per_day - todays_bets_count)}\n\n"
+        f"ACCOUNT BALANCES:\n"
+        f"{_render_balances_block(book_balances)}\n\n"
+        f"Now do the full analysis per the system prompt's structure. "
+        f"After analyzing the match, analyze EACH bet listed above, then "
+        f"give ONE clear final recommendation. Apply ALL the rules: never "
+        f"more than one bet per match, respect the daily limit, never a "
+        f"draw bet under the strict criteria, label every book sharp/decent/"
+        f"soft, never hedge. The final 'MY RECOMMENDATION' section must "
+        f"appear exactly as specified in the system prompt with the equals-"
+        f"line dividers."
+    )
+
+
+def _render_ev_bets_block(ev_bets: list[dict] | None) -> str:
+    if not ev_bets:
+        return "  (no +EV bets found on this match — recommend SKIP ALL)"
+    lines = []
+    for b in ev_bets:
+        if not b.get("actionable", True):
+            continue  # PHANTOM_EDGE / lockout — don't even surface
+        lines.append(_format_ev_bet_for_prompt(b))
+    return "\n".join(lines) if lines else "  (no actionable bets after anomaly filter)"
+
+
+def _render_existing_bets_block(existing_bets: list[dict] | None) -> str:
+    if not existing_bets:
+        return "  (none)"
+    lines = []
+    for b in existing_bets:
+        market = (b.get("market") or "h2h").upper()
+        outcome = b.get("bet_type") or ""
+        line = f" {b['market_line']}" if b.get("market_line") is not None else ""
+        book = b.get("book") or ""
+        odds = b.get("odds_at_placement") or 0
+        stake = b.get("stake") or 0
+        kind = "PAPER" if b.get("is_paper") else "CASH"
+        lines.append(
+            f"  - {market} {outcome.upper()}{line} on {book} @ {odds:.2f} "
+            f"({_decimal_to_american(odds)})  ${stake:.0f}  ({kind})"
+        )
+    return "\n".join(lines)
+
+
+def _render_balances_block(book_balances: list[dict] | None) -> str:
+    if not book_balances:
+        return "  (balances not loaded)"
+    return "\n".join(
+        f"  {b.get('display_name', '?'):<14} ${(b.get('balance_usd') or 0):.0f}"
+        for b in book_balances
     )
 
 
 def _has_critical_flag(text: str) -> bool:
-    """The new prompt only includes the 'PROBLEMS FOUND' section when issues
-    exist, so its presence is the signal. Substring match is good enough —
-    false positives just show the user a (harmless) fix-button banner."""
-    return "PROBLEMS FOUND" in (text or "").upper()
+    """The 'ANOMALY FLAGS' section is conditional — Claude only includes
+    it when a confirmed issue is found in the input data. Presence of the
+    section heading is the signal that the fix-it banner should show."""
+    upper = (text or "").upper()
+    if "ANOMALY FLAGS" not in upper:
+        return False
+    # Heuristic: section is present but body just says 'none detected' →
+    # not actually critical. Drop the false positive.
+    after = upper.split("ANOMALY FLAGS", 1)[1][:200]
+    if "NONE" in after and "DETECT" in after:
+        return False
+    return True
 
 
 # --- main entry --------------------------------------------------------------
 
 
-async def analyze_match(match_id: str, force: bool = False) -> dict:
+async def analyze_match(
+    match_id: str,
+    force: bool = False,
+    *,
+    ev_bets: list[dict] | None = None,
+    existing_bets: list[dict] | None = None,
+    todays_bets_count: int = 0,
+    book_balances: list[dict] | None = None,
+    max_bets_per_day: int = 3,
+    max_stake_per_bet: int = 20,
+) -> dict:
     """Get-or-generate analysis for a match.
 
     Returns the cached analysis if one exists and `cache_expires_at > now`,
@@ -315,7 +437,15 @@ async def analyze_match(match_id: str, force: bool = False) -> dict:
             "and restart betedge.service.",
         )
 
-    user_prompt = _build_user_prompt(prediction, anomalies)
+    user_prompt = _build_user_prompt(
+        prediction, anomalies,
+        ev_bets=ev_bets,
+        existing_bets=existing_bets,
+        todays_bets_count=todays_bets_count,
+        book_balances=book_balances,
+        max_bets_per_day=max_bets_per_day,
+        max_stake_per_bet=max_stake_per_bet,
+    )
     client = anthropic.AsyncAnthropic(api_key=api_key)
 
     try:
