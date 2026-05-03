@@ -601,6 +601,26 @@ async def get_ev_bets(
                 )
             bets.append(row)
 
+    # Dedupe by bet identity — the inner market passes (h2h / btts / each
+    # totals line) can each emit the same (match_id, market, market_line,
+    # outcome) row when a market_line shows up under more than one
+    # offer-lookup key, or when the EV calculator runs on overlapping
+    # ranges. Keep the highest-edge instance per identity tuple. Without
+    # this, downstream consumers (Top 3 grid, match analysis, digest)
+    # have to dedupe themselves and the AI analysis prompt sees the same
+    # bet 2-3 times.
+    deduped: dict[tuple, dict] = {}
+    for r in bets:
+        key = (
+            r.get("match_id"),
+            (r.get("market") or "h2h"),
+            r.get("market_line"),
+            r.get("outcome"),
+        )
+        existing = deduped.get(key)
+        if existing is None or (r.get("edge") or 0) > (existing.get("edge") or 0):
+            deduped[key] = r
+    bets = list(deduped.values())
     bets.sort(key=lambda x: x["edge"], reverse=True)
 
     # Per-match market consensus + model view: a parallel pair of structures
