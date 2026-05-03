@@ -240,13 +240,20 @@ function ActionsCell({ bet, onDeleted, onModeChanged }) {
     )
   }
 
+  // Switch button color matches its DESTINATION mode (where the bet would
+  // move) so the visual identity is consistent with the rest of the UI:
+  // → Cash uses warn/amber, → Paper uses accent/blue.
+  const switchClass = targetIsPaper
+    ? 'bg-accent-soft border-accent/40 text-accent hover:bg-accent hover:text-white'
+    : 'bg-warn-soft border-warn/40 text-warn hover:bg-warn hover:text-ink-950'
+
   return (
-    <div className="inline-flex gap-1">
+    <div className="inline-flex gap-1 whitespace-nowrap">
       {isOpen && (
         <button
           onClick={doSwitch}
-          title={`Switch to ${targetLabel} mode`}
-          className="px-2 py-0.5 text-[10px] rounded border border-ink-700 text-slate-300 hover:border-accent hover:text-accent"
+          title={`Move this bet to ${targetLabel} trade`}
+          className={`px-2 py-1 text-[10px] font-semibold rounded border ${switchClass}`}
         >
           → {targetLabel}
         </button>
@@ -256,7 +263,7 @@ function ActionsCell({ bet, onDeleted, onModeChanged }) {
         title={isOpen
           ? 'Cancel this bet — removes it from the log and reopens it on the +EV grid'
           : 'Cancel this bet — removes it from the log and from portfolio totals'}
-        className="px-2 py-0.5 text-[10px] rounded border border-ink-700 text-slate-400 hover:border-bad hover:text-bad"
+        className="px-2 py-1 text-[10px] font-semibold rounded border bg-bad-soft border-bad/40 text-bad hover:bg-bad hover:text-white"
       >
         Cancel
       </button>
@@ -333,7 +340,7 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeC
             <th className="text-left">Match outcome</th>
             <th className="text-center">Status</th>
             <th className="text-left">When</th>
-            <th className="text-center"></th>
+            <th className="text-center pr-3">Actions</th>
           </tr>
         </thead>
         <tbody>
