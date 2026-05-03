@@ -70,6 +70,49 @@ function betLabel(b) {
   return t
 }
 
+function CoverageBar({ covered, required, total = 7 }) {
+  const filled = Math.min(covered, total)
+  const empty = total - filled
+  return (
+    <span className="font-mono text-[10px] tabular-nums">
+      {covered}/{total} books{' '}
+      <span className={covered >= required ? 'text-good' : 'text-warn'}>
+        {'█'.repeat(filled)}
+      </span>
+      <span className="text-slate-700">{'░'.repeat(empty)}</span>
+      <span className="text-slate-500">  (need {required})</span>
+    </span>
+  )
+}
+
+function MonitoringRow({ bet }) {
+  const lg = LEAGUE_BADGE[bet.league] || LEAGUE_BADGE.default
+  const odds = bet.best_odds || bet.decimal_odds
+  const bookmaker = bet.best_book || bet.book
+  return (
+    <div className="grid grid-cols-12 gap-2 items-center bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-xs">
+      <span className={`col-span-1 text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border text-center ${lg.cls}`}>
+        {lg.label}
+      </span>
+      <div className="col-span-4">
+        <div className="text-slate-200">{bet.home_team} <span className="text-slate-500">vs</span> {bet.away_team}</div>
+        <div className="text-[10px] text-slate-500">
+          {bet.market || 'h2h'} {bet.outcome}{bet.market_line ? ` ${bet.market_line}` : ''} · {bookmaker} {Number(odds).toFixed(2)}
+        </div>
+      </div>
+      <div className="col-span-2 text-right tabular-nums text-good">
+        {fmtPct(bet.edge, { signed: true })} edge
+      </div>
+      <div className="col-span-5">
+        <CoverageBar
+          covered={bet.book_coverage ?? 0}
+          required={bet.min_book_coverage ?? 4}
+        />
+      </div>
+    </div>
+  )
+}
+
 function BetCard({ rank, bet, onClick }) {
   const cfg = PODIUM[rank]
   const lg = LEAGUE_BADGE[bet.league] || LEAGUE_BADGE.default
@@ -202,6 +245,27 @@ export default function BestBetsGrid({ refreshKey, onJumpToMatch }) {
           )
         })}
       </div>
+
+      {data?.monitoring?.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              👀 Monitoring — waiting for more books
+            </h3>
+            <span className="text-[10px] text-slate-500">
+              {data.monitoring.length} bet{data.monitoring.length === 1 ? '' : 's'} below coverage min — promotes automatically as more books price the line
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {data.monitoring.map(b => (
+              <MonitoringRow
+                key={`${b.match_id}-${b.outcome}-${b.market}-${b.market_line}`}
+                bet={b}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

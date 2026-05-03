@@ -137,6 +137,29 @@ def render(
     else:
         lines.extend(_render_bet_block(week_bets, max_bets, league_mode))
 
+    # Monitoring — bets with a real edge but not enough books pricing yet.
+    monitoring = []
+    for src in (ev_payload, week_payload):
+        for b in (src or {}).get("monitoring", []) or []:
+            monitoring.append(b)
+    if monitoring:
+        lines.append("")
+        lines.append("=== MONITORING — waiting for more books ===")
+        lines.append(f"({len(monitoring)} bet{'s' if len(monitoring) != 1 else ''} below coverage minimum — auto-promotes when more books price the line)")
+        for b in monitoring[:5]:
+            lg_key = (b.get("league") or league_mode).lower()
+            lg_label = _LEAGUE_LABEL.get(lg_key, lg_key.upper())
+            covered = b.get("book_coverage") or 0
+            required = b.get("min_book_coverage") or 4
+            edge_pct = (b.get("edge") or 0) * 100
+            line_str = f" {b['market_line']}" if b.get("market_line") is not None else ""
+            lines.append(
+                f"  • [{lg_label}] {b.get('home_team')} vs {b.get('away_team')} — "
+                f"{(b.get('market') or 'h2h')} {b.get('outcome')}{line_str} "
+                f"@ {b.get('best_book') or b.get('book')} {b.get('best_odds') or b.get('decimal_odds')}  "
+                f"({edge_pct:.1f}% edge, {covered}/7 books, need {required})"
+            )
+
     lines.append("")
     lines.append("=== BANKROLL STATUS ===")
     lines.append(f"Bankroll: ${bankroll:.2f}")

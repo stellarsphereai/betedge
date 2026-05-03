@@ -55,6 +55,16 @@ load_dotenv()
 LEAGUE_MODE = os.getenv("LEAGUE_MODE", "epl").lower()
 BANKROLL = float(os.getenv("BANKROLL", "1000"))
 MIN_EDGE = float(os.getenv("MIN_EDGE", "0.03"))
+
+# Minimum number of NY books that must price an outcome before we'll surface
+# it in the top 3. Below this threshold, the bet still appears in /best-bets'
+# `monitoring` list (with a coverage progress bar in the UI) but is held back
+# from the main ranking until consensus thickens up.
+MIN_BOOK_COVERAGE = {
+    "h2h":    5,
+    "btts":   4,
+    "totals": 4,
+}
 MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "0.02"))
 
 # WC-specific guardrails (real-money betting on a sparse, structurally weaker
@@ -498,6 +508,12 @@ async def get_ev_bets(
             offers = offer_lookup.get((b.market, b.market_line)) or {}
             outcome_offers = {bk: o[b.outcome] for bk, o in offers.items() if b.outcome in o}
             shop = line_shopper.best_line(outcome_offers, opening_odds=None, edge=b.edge)
+            # Per-market book coverage minimum — under this many NY books
+            # priced the outcome, consensus is too thin to trust the edge.
+            # The bet still gets surfaced as 'monitoring' rather than top 3.
+            book_coverage = len(outcome_offers)
+            min_coverage = MIN_BOOK_COVERAGE.get((b.market or "h2h").lower(), 4)
+            coverage_below_min = book_coverage < min_coverage
             kelly_stake_full = kelly.kelly_stake(b.edge, b.decimal_odds, bankroll, risk["max_stake_pct"])
             # Cap by per-book balance for the recommended book. If the book
             # isn't tracked (e.g. Caesars/BetRivers), available is None and
@@ -544,6 +560,9 @@ async def get_ev_bets(
                 "stake_reduced_low_balance": stake_reduced,
                 "top_up_book": top_up_book,
                 "book_balance_available": available,
+                "book_coverage": book_coverage,
+                "min_book_coverage": min_coverage,
+                "coverage_below_min": coverage_below_min,
             }
 
             # Anomaly detection: edge thresholds + sharp-book divergence. Each
@@ -805,11 +824,16 @@ async def _digest_payloads():
     return today, week, stats
 
 
+def _payload_with_monitoring(p: dict) -> dict:
+    return {"bets": p.get("bets", []), "monitoring": p.get("monitoring", [])}
+
+
 @app.get("/digest-preview")
 async def digest_preview():
     today, week, stats = await _digest_payloads()
     subject, body = digest.render(
-        {"bets": today["bets"]}, stats, week_payload={"bets": week["bets"]},
+        _payload_with_monitoring(today), stats,
+        week_payload=_payload_with_monitoring(week),
     )
     return {"subject": subject, "body": body, "to": os.getenv("DIGEST_EMAIL")}
 
@@ -818,7 +842,8 @@ async def digest_preview():
 async def send_digest():
     today, week, stats = await _digest_payloads()
     subject, body = digest.render(
-        {"bets": today["bets"]}, stats, week_payload={"bets": week["bets"]},
+        _payload_with_monitoring(today), stats,
+        week_payload=_payload_with_monitoring(week),
     )
     result = digest.send(subject, body)
     if not result["sent"]:
@@ -1200,17 +1225,25 @@ async def get_best_bets(
             if existing is None or (b.get("edge") or 0) > (existing.get("edge") or 0):
                 deduped[key] = b
 
-    merged = sorted(deduped.values(), key=lambda x: x.get("edge", 0.0), reverse=True)
-    top = merged[:limit]
+    # Split: ranked picks (full coverage) vs monitoring (waiting for books).
+    # Both lists are sorted by edge desc.
+    all_sorted = sorted(deduped.values(), key=lambda x: x.get("edge", 0.0), reverse=True)
+    ranked = [b for b in all_sorted if not b.get("coverage_below_min")]
+    monitoring = [b for b in all_sorted if b.get("coverage_below_min")]
+    top = ranked[:limit]
+    monitoring_top = monitoring[:limit + 2]  # show a few more in the watchlist
+
     return {
         "league_filter": league,
         "leagues_considered": list(leagues),
         "leagues_in_top": sorted({b.get("league") for b in top if b.get("league")}),
-        "count_considered": len(merged),
+        "count_considered": len(all_sorted),
         "count_returned": len(top),
+        "count_monitoring": len(monitoring),
         "kickoff_within_hours": kickoff_within_hours,
         "skipped_outside_window": skipped_window,
         "bets": top,
+        "monitoring": monitoring_top,
     }
 
 
