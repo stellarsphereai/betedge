@@ -106,17 +106,17 @@ export default function App() {
       if (!inWindow(b.commence_time)) continue
       const k = `${b.match_id}|${b.market || 'h2h'}|${b.market_line ?? ''}|${b.outcome}`
       if (placedKeys.has(k)) continue
-      const entry = byMatch.get(b.match_id) || {
-        prediction: {
-          match_id: b.match_id, home_team: b.home_team, away_team: b.away_team,
-          league, kickoff_time: b.commence_time,
-        },
-        bets: [],
-        consensus: consensus[b.match_id],
-        modelView: modelView[b.match_id],
-      }
+      // Only attach bets to predictions we already accepted into byMatch via
+      // the league filter above. The previous fallback synthesized a fake
+      // prediction with `league: <currently selected>` whenever a bet's
+      // match_id wasn't in byMatch — but during a league switch, `ev` is
+      // briefly stale (still holds the previous league's bets) while
+      // predictions have already been filtered to the new league. The
+      // fallback was resurrecting stale cross-league bets into the grid,
+      // which read as 'league filter doesn't work'.
+      const entry = byMatch.get(b.match_id)
+      if (!entry) continue
       entry.bets.push(b)
-      byMatch.set(b.match_id, entry)
     }
     return [...byMatch.values()]
   }, [predictions, ev, league, bets, windowHours])
