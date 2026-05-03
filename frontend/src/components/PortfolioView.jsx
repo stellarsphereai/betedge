@@ -354,30 +354,52 @@ function PnlByMarketChart({ bets }) {
   )
 }
 
-function PortfolioCharts({ bets, startingBankroll }) {
+function PortfolioCharts({ bets, startingBankroll, title = 'Portfolio charts', tone = 'neutral' }) {
   const [view, setView] = useState('bankroll')
   const tabs = [
     { id: 'bankroll', label: 'Bankroll over time' },
     { id: 'edges', label: 'Edge distribution' },
     { id: 'pnl', label: 'P&L by market' },
   ]
+  // Tone gives each panel a colored top accent so paper vs cash is obvious
+  // at a glance even when they're side-by-side.
+  const toneCls = {
+    paper:   'border-accent/40',
+    cash:    'border-warn/40',
+    neutral: 'border-ink-700',
+  }[tone] || 'border-ink-700'
   return (
-    <div className="bg-ink-900 border border-ink-700 rounded-xl p-4">
+    <div className={`bg-ink-900 border ${toneCls} rounded-xl p-4`}>
       <div className="flex justify-between items-center mb-3">
-        <div className="text-sm font-medium">Portfolio charts</div>
+        <div className="text-sm font-medium flex items-center gap-2">
+          {tone === 'paper' && <span className="text-accent">📝</span>}
+          {tone === 'cash' && <span className="text-warn">💵</span>}
+          {title}
+          <span className="text-[10px] text-slate-500 font-normal">
+            ({bets.length} bet{bets.length === 1 ? '' : 's'})
+          </span>
+        </div>
         <div className="bg-ink-800 border border-ink-700 rounded-full p-0.5 flex">
           {tabs.map(t => (
             <button
               key={t.id}
               onClick={() => setView(t.id)}
-              className={`px-3 py-1 rounded-full text-[11px] font-medium ${view === t.id ? 'bg-accent text-white' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium ${view === t.id ? 'bg-accent text-white' : 'text-slate-400 hover:text-slate-200'}`}
             >{t.label}</button>
           ))}
         </div>
       </div>
-      {view === 'bankroll' && <BankrollOverTimeChart bets={bets} startingBankroll={startingBankroll} />}
-      {view === 'edges' && <EdgeDistributionChart bets={bets} />}
-      {view === 'pnl' && <PnlByMarketChart bets={bets} />}
+      {bets.length === 0 ? (
+        <div className="h-64 flex items-center justify-center text-xs text-slate-500">
+          No {tone === 'paper' ? 'paper' : tone === 'cash' ? 'cash' : ''} bets yet — chart populates as bets are placed.
+        </div>
+      ) : (
+        <>
+          {view === 'bankroll' && <BankrollOverTimeChart bets={bets} startingBankroll={startingBankroll} />}
+          {view === 'edges' && <EdgeDistributionChart bets={bets} />}
+          {view === 'pnl' && <PnlByMarketChart bets={bets} />}
+        </>
+      )}
     </div>
   )
 }
@@ -593,6 +615,8 @@ function exportCSV(bets) {
 
 export default function PortfolioView() {
   const [bets, setBets] = useState([])
+  const [paperBets, setPaperBets] = useState([])
+  const [cashBets, setCashBets] = useState([])
   const [summary, setSummary] = useState(null)
   const [projection, setProjection] = useState(null)
   const [paperOnly, setPaperOnly] = useState(true)
@@ -613,6 +637,10 @@ export default function PortfolioView() {
       const allBets = b.bets || []
       const filtered = allBets.filter(x => paperOnly ? x.is_paper === 1 : x.is_paper !== 1)
       setBets(filtered)
+      // Charts always show both paper + cash, side-by-side, regardless of the
+      // top toggle (the toggle only affects the summary cards + bet table).
+      setPaperBets(allBets.filter(x => x.is_paper === 1))
+      setCashBets(allBets.filter(x => x.is_paper !== 1))
       setProjection(p)
     } catch (e) { setError(e.message || String(e)) }
     finally { setLoading(false) }
@@ -726,12 +754,28 @@ export default function PortfolioView() {
             dateFrom={filters.dateFrom}
           />
 
-          <PortfolioCharts bets={bets} startingBankroll={startingBankroll} />
         </div>
 
         <div className="space-y-4">
           <CalculatorPanel defaultEdge={defaultEdge} />
         </div>
+      </div>
+
+      {/* Charts always show both paper + cash side-by-side regardless of the
+          top toggle — comparing the two views is the whole point. */}
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PortfolioCharts
+          title="Paper trade"
+          tone="paper"
+          bets={paperBets}
+          startingBankroll={startingBankroll}
+        />
+        <PortfolioCharts
+          title="Cash trade"
+          tone="cash"
+          bets={cashBets}
+          startingBankroll={startingBankroll}
+        />
       </div>
 
       <div className="mt-4">
