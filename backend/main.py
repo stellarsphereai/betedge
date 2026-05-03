@@ -1122,20 +1122,40 @@ async def get_best_bets(
     bankroll: float = Query(BANKROLL, ge=100.0, le=1_000_000.0),
     min_edge: float = Query(MIN_EDGE, ge=0.0, le=0.5),
     limit: int = Query(3, ge=1, le=10),
+    kickoff_within_hours: int = Query(
+        48, ge=1, le=336,
+        description="Only consider matches kicking off within this many hours of now. "
+                    "Default 48h so 'best bets' means 'imminent' rather than 'this week'.",
+    ),
 ):
     """Top-N best bets across one or all tracked leagues, ranked by edge.
 
-    Per-league anomaly thresholds are applied at /ev-bets time, so a
-    UCL bet at 11% edge survives (UCL threshold 12%) while a World Cup
+    Filters to matches with `commence_time` between now and now+kickoff_within_hours
+    so the grid surfaces actionable picks rather than week-out futures the model
+    happens to have priced. Per-league anomaly thresholds are applied at /ev-bets
+    time, so a UCL bet at 11% edge survives (UCL threshold 12%) while a World Cup
     bet at 11% edge is filtered (WC threshold 10%).
     """
+    from datetime import datetime, timedelta, timezone as _tz
     league = (league or "all").lower()
     leagues = LEAGUES_FOR_BEST_BETS if league == "all" else (league,)
+    now = datetime.now(_tz.utc)
+    cutoff = now + timedelta(hours=kickoff_within_hours)
+
+    def _within_window(commence_time: str | None) -> bool:
+        if not commence_time:
+            return False
+        try:
+            dt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return now <= dt <= cutoff
 
     # Dedupe by (match_id, market, market_line, outcome) — /ev-bets can return
     # the same bet row more than once across its internal market passes; keep
     # the row with the highest edge.
     deduped: dict[tuple, dict] = {}
+    skipped_window = 0
     for lg in leagues:
         try:
             r = await get_ev_bets(bankroll=bankroll, min_edge=min_edge, league=lg)
@@ -1143,6 +1163,9 @@ async def get_best_bets(
             continue  # league not configured / no data → skip
         for b in r.get("bets", []) or []:
             if _bet_is_excluded(b):
+                continue
+            if not _within_window(b.get("commence_time")):
+                skipped_window += 1
                 continue
             b.setdefault("league", lg)
             key = (
@@ -1163,6 +1186,8 @@ async def get_best_bets(
         "leagues_in_top": sorted({b.get("league") for b in top if b.get("league")}),
         "count_considered": len(merged),
         "count_returned": len(top),
+        "kickoff_within_hours": kickoff_within_hours,
+        "skipped_outside_window": skipped_window,
         "bets": top,
     }
 

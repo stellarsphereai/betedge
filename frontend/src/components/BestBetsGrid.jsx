@@ -25,6 +25,22 @@ const PODIUM = [
   { medal: '🥉', label: 'THIRD BEST',  accent: 'border-amber-700/30 bg-amber-700/5' },
 ]
 
+function fmtKickoff(iso) {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    const now = new Date()
+    const sameDay = d.toDateString() === now.toDateString()
+    const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
+    const isTomorrow = d.toDateString() === tomorrow.toDateString()
+    const date = sameDay ? 'Today'
+                : isTomorrow ? 'Tomorrow'
+                : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    return `${date}, ${time}`
+  } catch { return iso }
+}
+
 function fmtPct(n, { signed = false } = {}) {
   if (n == null || Number.isNaN(Number(n))) return '—'
   const x = Number(n) * 100
@@ -79,6 +95,11 @@ function BetCard({ rank, bet, onClick }) {
       <div className="mb-2">
         <div className="text-sm font-semibold text-slate-100 leading-tight">{bet.home_team}</div>
         <div className="text-[11px] text-slate-500">vs {bet.away_team}</div>
+        {bet.commence_time && (
+          <div className="text-[10px] text-slate-400 mt-1" title={bet.commence_time}>
+            ⏱ {fmtKickoff(bet.commence_time)}
+          </div>
+        )}
       </div>
 
       <div className="border-t border-ink-800 pt-2 space-y-1">
