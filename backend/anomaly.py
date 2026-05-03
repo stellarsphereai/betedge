@@ -40,12 +40,12 @@ FORM_DIVERGE_THRESHOLD = 0.40   # 40% relative — same threshold across leagues
 # treat it as a model error rather than a real edge. Per-league because
 # corpus quality varies — UCL/WC are smaller, sharper markets so we tighten.
 MARKET_CONSENSUS_THRESHOLDS_PP = {
-    "epl":       0.08,
-    "ucl":       0.06,
-    "uel":       0.08,
-    "world_cup": 0.05,
+    "epl":       0.06,
+    "ucl":       0.05,
+    "uel":       0.06,
+    "world_cup": 0.04,
 }
-DEFAULT_MARKET_CONSENSUS_THRESHOLD_PP = 0.08
+DEFAULT_MARKET_CONSENSUS_THRESHOLD_PP = 0.06
 
 # Books treated as "sharp" for the divergence check. Match book TITLES the way
 # odds_client emits them (BOOK_TITLE_OVERRIDES + Odds API .title).
