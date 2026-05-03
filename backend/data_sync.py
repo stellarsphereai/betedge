@@ -85,15 +85,46 @@ def _store_fixture(conn: sqlite3.Connection, fx: dict, league: str) -> None:
     )
 
 
+_KNOCKOUT_ROUND_TOKENS = ("Round of 16", "Quarter-finals", "Semi-finals", "Final")
+_GROUP_ROUND_TOKENS = ("Group Stage", "League Phase")
+_GROUP_STAGE_DISCOUNT = 0.70   # downweight group-stage xG when blending
+
+
+def _is_ucl_knockout_round(round_label: str | None) -> bool:
+    if not round_label:
+        return False
+    return any(tok in round_label for tok in _KNOCKOUT_ROUND_TOKENS)
+
+
+def _is_ucl_group_round(round_label: str | None) -> bool:
+    if not round_label:
+        return False
+    return any(tok in round_label for tok in _GROUP_ROUND_TOKENS)
+
+
 def _team_xg_history(
     team_id: int,
     recent: list[dict],
     stats_cache: dict[int, list[dict]],
     n: int = RECENT_FORM_WINDOW,
-) -> tuple[list[float], list[float]]:
+    *,
+    knockout_only_for_ucl: bool = False,
+) -> tuple[list[float], list[float], dict]:
     """From a team's recent fixtures + cached stats, return (xg_for, xg_against)
-    most recent first."""
-    rows: list[tuple[str, float, float]] = []
+    most recent first.
+
+    When `knockout_only_for_ucl=True`, the model is predicting a UCL knockout
+    fixture and group-stage data is unreliable for that prediction (group
+    stage often features elite teams running up scores against weaker
+    opposition; those numbers don't carry into knockout legs). Behavior:
+      - If ≥3 knockout-stage fixtures available → use ONLY those.
+      - Else → blend, discounting group-stage xG by 0.70 and signaling
+        `fallback_used=True` so the caller can downgrade confidence.
+
+    Returns (xg_for, xg_against, info) where info has:
+      ko_count, group_count, fallback_used, mode ('knockout_only' or 'discounted_blend' or 'all')
+    """
+    rows: list[tuple[str, float, float, str]] = []
     for fx in recent:
         fid = fx["fixture"]["id"]
         stats = stats_cache.get(fid)
@@ -108,10 +139,38 @@ def _team_xg_history(
         xg_opp = api_football.expected_goals_for(stats, opp_id)
         if xg_self is None or xg_opp is None:
             continue
-        rows.append((fx["fixture"]["date"], xg_self, xg_opp))
+        round_label = fx.get("league", {}).get("round") or ""
+        rows.append((fx["fixture"]["date"], xg_self, xg_opp, round_label))
     rows.sort(key=lambda r: r[0], reverse=True)
-    rows = rows[:n]
-    return [r[1] for r in rows], [r[2] for r in rows]
+
+    info = {"ko_count": 0, "group_count": 0, "fallback_used": False, "mode": "all"}
+    if not knockout_only_for_ucl:
+        rows = rows[:n]
+        return [r[1] for r in rows], [r[2] for r in rows], info
+
+    # UCL knockout path
+    ko_rows = [r for r in rows if _is_ucl_knockout_round(r[3])]
+    info["ko_count"] = len(ko_rows)
+    info["group_count"] = sum(1 for r in rows if _is_ucl_group_round(r[3]))
+
+    if len(ko_rows) >= 3:
+        info["mode"] = "knockout_only"
+        ko_rows = ko_rows[:n]
+        return [r[1] for r in ko_rows], [r[2] for r in ko_rows], info
+
+    # Fallback: blend with group-stage games discounted to 70%.
+    info["mode"] = "discounted_blend"
+    info["fallback_used"] = True
+    capped = rows[:n]
+    xg_for, xg_against = [], []
+    for date, self_xg, opp_xg, round_label in capped:
+        if _is_ucl_group_round(round_label):
+            xg_for.append(self_xg * _GROUP_STAGE_DISCOUNT)
+            xg_against.append(opp_xg * _GROUP_STAGE_DISCOUNT)
+        else:
+            xg_for.append(self_xg)
+            xg_against.append(opp_xg)
+    return xg_for, xg_against, info
 
 
 def _rest_days_for_team(team_id: int, target_kickoff: str, recent: list[dict]) -> int:
@@ -266,8 +325,19 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
         for fx in fixtures:
             home_id = fx["teams"]["home"]["id"]
             away_id = fx["teams"]["away"]["id"]
-            home_xg_for, home_xg_against = _team_xg_history(home_id, team_recent.get(home_id, []), stats_cache)
-            away_xg_for, away_xg_against = _team_xg_history(away_id, team_recent.get(away_id, []), stats_cache)
+            # For UCL knockout fixtures, restrict each team's xG window to
+            # knockout-stage games only (or fall back to a group-stage-
+            # discounted blend if <3 KO games available).
+            this_round = fx.get("league", {}).get("round") or ""
+            is_ucl_knockout = league == "ucl" and _is_knockout(this_round)
+            home_xg_for, home_xg_against, home_xg_info = _team_xg_history(
+                home_id, team_recent.get(home_id, []), stats_cache,
+                knockout_only_for_ucl=is_ucl_knockout,
+            )
+            away_xg_for, away_xg_against, away_xg_info = _team_xg_history(
+                away_id, team_recent.get(away_id, []), stats_cache,
+                knockout_only_for_ucl=is_ucl_knockout,
+            )
             if len(home_xg_for) < 3 or len(away_xg_for) < 3:
                 summary["skipped_for_data"] += 1
                 continue
@@ -311,6 +381,14 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             if knockout and league in ("ucl", "uel"):
                 match_params = dataclasses.replace(match_params, season_blend=0.30)
             prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
+
+            # When the UCL knockout filter fell back to discounted-blend
+            # (because either team had <3 knockout-stage games available),
+            # the input data is structurally weaker — force LOW confidence
+            # so downstream consumers (Top 3, digest, recommendations)
+            # weight the prediction less.
+            if is_ucl_knockout and (home_xg_info["fallback_used"] or away_xg_info["fallback_used"]):
+                prediction.confidence = "LOW"
 
             match_id = f"af-{fx['fixture']['id']}"
 
