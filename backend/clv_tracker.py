@@ -91,8 +91,14 @@ def set_closing(bet_id: int, closing_odds: float) -> None:
 
 
 async def sweep_closing_lines(league_to_sport_key: dict[str, str]) -> dict:
-    """Capture closing lines for every open paper bet whose match has kicked off
-    and whose closing_odds is still null. Skips fixtures still in the future."""
+    """Capture closing lines for every open bet — paper AND cash — whose
+    match has kicked off and whose closing_odds is still null. Skips
+    fixtures still in the future.
+
+    Originally filtered to paper only (back when the system was paper-only).
+    Cash bets need CLV more than paper does — real money on the line — so
+    the filter was wrong and produced empty CLV for every cash bet.
+    """
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
     captured = 0
@@ -105,8 +111,7 @@ async def sweep_closing_lines(league_to_sport_key: dict[str, str]) -> dict:
             SELECT b.id, f.kickoff_time, f.league
             FROM bets_placed b
             LEFT JOIN fixtures f ON f.match_id = b.match_id
-            WHERE b.is_paper = 1
-              AND b.closing_odds IS NULL
+            WHERE b.closing_odds IS NULL
               AND f.kickoff_time IS NOT NULL
             """
         ).fetchall()
