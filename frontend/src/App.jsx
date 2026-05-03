@@ -93,6 +93,7 @@ export default function App() {
 
     const consensus = ev?.match_consensus || {}
     const modelView = ev?.match_model_view || {}
+    const inPlaySet = new Set(ev?.in_play_match_ids || [])
     const byMatch = new Map()
     for (const p of predictions) {
       if (p.league && p.league !== league) continue
@@ -100,6 +101,7 @@ export default function App() {
       byMatch.set(p.match_id, {
         prediction: p, bets: [],
         consensus: consensus[p.match_id], modelView: modelView[p.match_id],
+        inPlay: inPlaySet.has(p.match_id),
       })
     }
     for (const b of (ev?.bets || [])) {
@@ -287,6 +289,7 @@ export default function App() {
               flashed={flashedMatchId === m.prediction.match_id}
               onLogPaper={logPaperBet}
               onLogReal={logRealBet}
+              inPlay={m.inPlay}
             />
           ))}
         </div>

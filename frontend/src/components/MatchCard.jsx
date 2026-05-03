@@ -135,8 +135,13 @@ function ProbabilityView({ title, view, prediction, valueClass = 'text-slate-300
   )
 }
 
-export default function MatchCard({ prediction, bets, consensus, modelView, league, flashed, onLogPaper, onLogReal }) {
-  const sortedBets = bestPerOutcome(bets)
+export default function MatchCard({ prediction, bets, consensus, modelView, league, flashed, onLogPaper, onLogReal, inPlay }) {
+  // When the match has kicked off the backend stops emitting fresh
+  // match_consensus / match_model_view (so the dashboard doesn't compare
+  // pre-match model probs against live in-play prices), and we hide the
+  // bet rows / Paper / Cash / AI buttons — placing a bet at this point is
+  // either too late or trades against an unrelated in-play market.
+  const sortedBets = inPlay ? [] : bestPerOutcome(bets)
   const hasArb = sortedBets.length > 0
   const topEdge = Math.max(0, ...sortedBets.map(b => b.edge))
   const topBet = sortedBets.slice().sort((a, b) => b.edge - a.edge)[0]
@@ -239,6 +244,14 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
           </span>
         </div>
       </div>
+
+      {inPlay && (
+        <div className="mt-2 mb-3 px-3 py-2 rounded-md bg-warn-soft border border-warn/40 text-warn text-xs flex items-center gap-2">
+          <span className="text-base leading-none">⏱</span>
+          <span className="font-semibold tracking-wide uppercase">In play</span>
+          <span className="text-warn/80">— pre-match odds shown; market frozen at kickoff</span>
+        </div>
+      )}
 
       <ProbabilityBar
         home={prediction.home_win_pct} draw={prediction.draw_pct} away={prediction.away_win_pct}
@@ -370,7 +383,9 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
         </table>
       )}
 
-      <ProbabilityView title="What the market thinks" view={consensus} prediction={prediction} valueClass="text-slate-300" />
+      {!inPlay && (
+        <ProbabilityView title="What the market thinks" view={consensus} prediction={prediction} valueClass="text-slate-300" />
+      )}
       <ProbabilityView title="What the model thinks" view={modelView} prediction={prediction} valueClass="text-good" />
 
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-ink-700/60 text-xs text-slate-400">
@@ -380,12 +395,14 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
           <span className="text-slate-200 tabular-nums">{prediction.away_xg?.toFixed(2)}</span>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowAnalysis(s => !s)}
-            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-purple-600/20 text-purple-300 hover:bg-purple-600/30 border border-purple-600/40"
-          >
-            <Sparkles size={12} /> {showAnalysis ? 'Hide AI' : 'AI Analysis'}
-          </button>
+          {!inPlay && (
+            <button
+              onClick={() => setShowAnalysis(s => !s)}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-purple-600/20 text-purple-300 hover:bg-purple-600/30 border border-purple-600/40"
+            >
+              <Sparkles size={12} /> {showAnalysis ? 'Hide AI' : 'AI Analysis'}
+            </button>
+          )}
           {hasArb && league === 'world_cup' && (
             <button
               className="flex items-center gap-1 text-xs bg-accent text-white px-2.5 py-1 rounded-md hover:opacity-90"

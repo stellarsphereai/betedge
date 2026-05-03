@@ -219,6 +219,61 @@ async def _job_daily_pnl():
 # Friendly labels for the daily status email — covers every job_id in the
 # schedule below. New jobs added to the schedule should also get a label
 # here; the listener falls back to the raw id if missing.
+async def job_activate_opponent_adjusted_xg():
+    """One-shot — fires at 2026-07-20 00:01 NY-local (post-World-Cup Final).
+
+    Flips the OPPONENT_ADJUSTED_XG flag in the box's .env and emails a
+    notification + a kickoff for the auto-backtest. Until this fires, the
+    table is populated nightly but the model uses raw xG.
+    """
+    log.info("scheduler: activating Fix B — opponent-adjusted xG")
+    try:
+        env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+        env_path = os.path.abspath(env_path)
+        # Set or update the flag in .env
+        try:
+            existing = open(env_path).read() if os.path.exists(env_path) else ""
+        except Exception:
+            existing = ""
+        new_lines = []
+        replaced = False
+        for line in existing.splitlines():
+            if line.startswith("OPPONENT_ADJUSTED_XG="):
+                new_lines.append("OPPONENT_ADJUSTED_XG=true")
+                replaced = True
+            else:
+                new_lines.append(line)
+        if not replaced:
+            new_lines.append("OPPONENT_ADJUSTED_XG=true")
+        try:
+            with open(env_path, "w") as f:
+                f.write("\n".join(new_lines) + "\n")
+            log.info("Fix B activation: wrote OPPONENT_ADJUSTED_XG=true to %s", env_path)
+        except Exception as e:
+            log.exception("Fix B activation: writing .env failed: %s", e)
+
+        # Notify via email — flag the operator that a service restart is
+        # required before the model actually picks up the change.
+        try:
+            subject = "BetEdge — Fix B activated (opponent-adjusted xG)"
+            body = (
+                "OPPONENT_ADJUSTED_XG was set to true in .env at the scheduled\n"
+                "time. The running uvicorn process needs a restart to pick up\n"
+                "the new env value:\n\n"
+                "  sudo systemctl restart betedge.service\n\n"
+                "After restart, the next sync will use opponent-strength-\n"
+                "adjusted xG. Run a backtest to compare:\n\n"
+                "  cd /opt/betedge/backend && .venv/bin/python3 backtest.py\n\n"
+                "If accuracy regresses, set OPPONENT_ADJUSTED_XG=false and\n"
+                "restart again to revert."
+            )
+            digest.send(subject, body)
+        except Exception as e:
+            log.exception("Fix B activation email failed: %s", e)
+    except Exception:
+        log.exception("Fix B activation crashed")
+
+
 _JOB_LABELS = {
     "sync_epl":             "EPL sync",
     "sync_ucl":             "UCL sync",
@@ -232,6 +287,7 @@ _JOB_LABELS = {
     "monthly_calibration":  "Monthly calibration check",
     "wc_nightly_check":     "World Cup nightly check",
     "daily_status_email":   "Daily cron status email",
+    "activate_fix_b":       "Activate Fix B (opponent-adjusted xG)",
 }
 
 
@@ -336,6 +392,12 @@ def build() -> AsyncIOScheduler:
         ("monthly_calibration",   job_monthly_calibration_check, CronTrigger(day=1,            hour=4, minute=0, timezone=TIMEZONE)),
         # Nightly 04:30 NY — silent unless WC phase transitioned
         ("wc_nightly_check",      job_nightly_wc_check,          CronTrigger(hour=4, minute=30, timezone=TIMEZONE)),
+        # Fix B (opponent-adjusted xG) auto-activation — one-shot at
+        # 2026-07-20 00:01 NY-local (post-World-Cup-Final). Flips the
+        # OPPONENT_ADJUSTED_XG flag in .env and emails the operator.
+        # After this fires it never re-triggers (year/month/day all match
+        # exactly once).
+        ("activate_fix_b",        job_activate_opponent_adjusted_xg, CronTrigger(year=2026, month=7, day=20, hour=0, minute=1, timezone=TIMEZONE)),
     ]
     for jid, fn, trig in schedule:
         s.add_job(fn, trig, id=jid, replace_existing=True)

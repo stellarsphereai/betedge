@@ -11,6 +11,7 @@ the dashboard / digest can show "blocked: paid plan needed" without crashing.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -109,6 +110,7 @@ def _team_xg_history(
     n: int = RECENT_FORM_WINDOW,
     *,
     knockout_only_for_ucl: bool = False,
+    opponent_ratings: dict[int, dict] | None = None,
 ) -> tuple[list[float], list[float], dict]:
     """From a team's recent fixtures + cached stats, return (xg_for, xg_against)
     most recent first.
@@ -124,6 +126,17 @@ def _team_xg_history(
     Returns (xg_for, xg_against, info) where info has:
       ko_count, group_count, fallback_used, mode ('knockout_only' or 'discounted_blend' or 'all')
     """
+    # Lazy import to avoid cycles + keep this importable in standalone tests.
+    try:
+        import team_ratings as _team_ratings_mod
+    except Exception:
+        _team_ratings_mod = None
+    apply_opponent_adj = (
+        opponent_ratings is not None
+        and _team_ratings_mod is not None
+        and _team_ratings_mod.opponent_adjustment_enabled()
+    )
+
     rows: list[tuple[str, float, float, str]] = []
     for fx in recent:
         fid = fx["fixture"]["id"]
@@ -139,6 +152,14 @@ def _team_xg_history(
         xg_opp = api_football.expected_goals_for(stats, opp_id)
         if xg_self is None or xg_opp is None:
             continue
+        # Fix B: per-game opponent-strength adjustment.
+        if apply_opponent_adj:
+            opp_r = (opponent_ratings or {}).get(opp_id) or {}
+            xg_self, xg_opp = _team_ratings_mod.adjust_xg(
+                xg_self, xg_opp,
+                opponent_attack_rating=opp_r.get("attack"),
+                opponent_defense_rating=opp_r.get("defense"),
+            )
         round_label = fx.get("league", {}).get("round") or ""
         rows.append((fx["fixture"]["date"], xg_self, xg_opp, round_label))
     rows.sort(key=lambda r: r[0], reverse=True)
@@ -203,6 +224,21 @@ def _scorer_out_per_team(injuries: list[dict], scorers: list[dict]) -> dict[int,
     for team_id, top3 in top3_by_team.items():
         out[team_id] = bool(top3 & injured_player_ids)
     return out
+
+
+_EPL_ROUND_RE = re.compile(r"(?i)regular season\s*-\s*(\d{1,2})")
+
+
+def _epl_gameweek(round_label: str | None) -> int | None:
+    """Extract the gameweek number from API-Football's round label.
+    Examples: 'Regular Season - 36' → 36; 'Relegation - 1' → None.
+    Used by the late-season tightening below — late-season EPL form
+    matters more than the dragging season average that includes Aug–Oct.
+    """
+    if not round_label:
+        return None
+    m = _EPL_ROUND_RE.search(round_label)
+    return int(m.group(1)) if m else None
 
 
 def _is_knockout(round_label: str | None) -> bool:
@@ -313,6 +349,11 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
         # the blend in model.team_strengths so a hot/cold 10-game stretch is
         # tempered by the team's full-season baseline.
         season_avg: dict[int, tuple[float | None, float | None]] = {}
+        team_names: dict[int, str] = {}
+        for fx in fixtures:
+            for side in ("home", "away"):
+                t = fx["teams"][side]
+                team_names[t["id"]] = team_aliases.canonical(t["name"])
         for tid in team_ids:
             try:
                 ts = await api_football.team_statistics(client, tid, league_id, season, force=force)
@@ -321,7 +362,38 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                 summary["errors"].append(f"team_stats {tid} blocked ({e})")
                 season_avg[tid] = (None, None)
 
+        # 4c. Refresh team_ratings — opponent-strength scores normalized to
+        # league average (Fix B). The model only USES these when
+        # OPPONENT_ADJUSTED_XG=true, but we populate the table either way so
+        # the post-July-20 backtest has data to compare against.
+        try:
+            import team_ratings
+            ratings_rows = []
+            for tid in team_ids:
+                f, a = season_avg.get(tid, (None, None))
+                if f is None or a is None:
+                    continue
+                ratings_rows.append({
+                    "team_id": tid,
+                    "team_name": team_names.get(tid),
+                    "season_xg_for": f,
+                    "season_xg_against": a,
+                    "games_played": RECENT_FORM_WINDOW,  # rough — refined later
+                })
+            n = team_ratings.upsert_ratings_for_league(league_id, season, ratings_rows)
+            summary["ratings_upserted"] = n
+        except Exception as e:
+            log.exception("team_ratings upsert failed: %s", e)
+            summary["errors"].append(f"team_ratings: {e}")
+
         # 5. Run model and upsert
+        # Pull rating snapshot once per league/season — used by Fix B's
+        # opponent-strength xG adjustment when the env flag is on.
+        try:
+            import team_ratings
+            ratings_snapshot = team_ratings.get_ratings(league_id, season)
+        except Exception:
+            ratings_snapshot = {}
         for fx in fixtures:
             home_id = fx["teams"]["home"]["id"]
             away_id = fx["teams"]["away"]["id"]
@@ -333,10 +405,12 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             home_xg_for, home_xg_against, home_xg_info = _team_xg_history(
                 home_id, team_recent.get(home_id, []), stats_cache,
                 knockout_only_for_ucl=is_ucl_knockout,
+                opponent_ratings=ratings_snapshot,
             )
             away_xg_for, away_xg_against, away_xg_info = _team_xg_history(
                 away_id, team_recent.get(away_id, []), stats_cache,
                 knockout_only_for_ucl=is_ucl_knockout,
+                opponent_ratings=ratings_snapshot,
             )
             if len(home_xg_for) < 3 or len(away_xg_for) < 3:
                 summary["skipped_for_data"] += 1
@@ -380,6 +454,20 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             match_params = model_params
             if knockout and league in ("ucl", "uel"):
                 match_params = dataclasses.replace(match_params, season_blend=0.30)
+            # EPL late-season tightening — by gameweek 30+ the 10-game window
+            # captures roughly current shape, but the season baseline still
+            # carries Aug–Oct results from before injuries / mid-season form
+            # changes. Push more weight onto the recent window:
+            #   GW <= 29: default 0.60 recent / 0.40 season
+            #   GW 30-35: 0.70 / 0.30
+            #   GW 36-38: 0.75 / 0.25
+            if league == "epl":
+                gw = _epl_gameweek(this_round)
+                if gw is not None:
+                    if gw >= 36:
+                        match_params = dataclasses.replace(match_params, season_blend=0.75)
+                    elif gw >= 30:
+                        match_params = dataclasses.replace(match_params, season_blend=0.70)
             prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
 
             # When the UCL knockout filter fell back to discounted-blend

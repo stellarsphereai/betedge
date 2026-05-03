@@ -628,10 +628,25 @@ async def get_ev_bets(
     # thinks" for every outcome, even ones with no +EV bet against them.
     match_consensus: dict[str, dict] = {}
     match_model_view: dict[str, dict] = {}
+    in_play_matches: set[str] = set()
     for p in preds:
         m = by_pair.get(_key(p["home_team"], p["away_team"]))
         if not m:
             continue
+        # Skip in-play / completed fixtures here too — the dashboard reads this
+        # to render "model vs market" cards, and once a match kicks off the
+        # books switch to live in-play prices that have nothing to do with the
+        # pre-match probabilities we logged. Without this guard the dashboard
+        # showed Villa-Spurs pre-match 53% home vs in-play 3% home as a
+        # 50pp "divergence" — pure noise.
+        commence = m.get("commence_time")
+        if commence:
+            try:
+                if datetime.fromisoformat(commence.replace("Z", "+00:00")) <= now_utc:
+                    in_play_matches.add(p["match_id"])
+                    continue
+            except ValueError:
+                pass
         markets = odds_client.parse_all_markets(m)
 
         view: dict = {}
@@ -693,6 +708,7 @@ async def get_ev_bets(
         "bets": bets,
         "match_consensus": match_consensus,
         "match_model_view": match_model_view,
+        "in_play_match_ids": sorted(in_play_matches),
         "risk": {
             "min_edge": risk["min_edge"],
             "max_stake_pct": risk["max_stake_pct"],

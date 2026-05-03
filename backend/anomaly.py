@@ -93,6 +93,7 @@ def detect_edge_anomalies(bet: dict, league: str | None = None) -> list[Anomaly]
         book_implied=bet.get("true_implied_prob"),
     )
 
+    outcome = bet.get("outcome")
     if edge > EDGE_PHANTOM_THRESHOLD:
         out.append(Anomaly(
             anomaly_type="PHANTOM_EDGE",
@@ -102,6 +103,7 @@ def detect_edge_anomalies(bet: dict, league: str | None = None) -> list[Anomaly]
                 f"likely a model error, not market mispricing"
             ),
             excludes_bet=True,
+            extras={"outcome": outcome},
             **common,
         ))
         return out  # phantom dominates; skip the EDGE_HIGH check
@@ -116,6 +118,7 @@ def detect_edge_anomalies(bet: dict, league: str | None = None) -> list[Anomaly]
                 f"implies model over-confidence"
             ),
             downgrades_to_low=True,
+            extras={"outcome": outcome},
             **common,
         ))
     return out
@@ -155,6 +158,7 @@ def detect_sharp_divergence(
         edge_shown=bet.get("edge"),
         model_prob=model_p,
         book_implied=book_p,
+        extras={"outcome": bet.get("outcome")},
     ))
     return out
 
@@ -203,6 +207,7 @@ def detect_market_consensus_divergence(
         model_prob=model_p,
         book_implied=consensus_prob,
         downgrades_to_low=True,  # excluded from top 3 / digest, still visible in grid
+        extras={"outcome": bet.get("outcome")},
     ))
     return out
 
@@ -296,26 +301,49 @@ def detect_form_divergence(form, side: str, prediction, match_id: str = "") -> l
 # ---- persistence ----------------------------------------------------------
 
 
+def _dedup_key(r: "Anomaly") -> str:
+    """Per-day per-(match, outcome, type) key. Outcome is pulled from the
+    bet's identity tuple stored in `extras['outcome']` if the caller put it
+    there, otherwise we derive from `(model_prob, book_implied)` to keep
+    home/draw/away distinct (different outcomes have different prob pairs).
+    """
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date().isoformat()
+    outcome = (r.extras or {}).get("outcome") if hasattr(r, "extras") else None
+    if not outcome:
+        # Fall back to a discriminator that varies across home/draw/away
+        # without having to thread `outcome` through every call site.
+        outcome = f"m{round((r.model_prob or 0)*1000)}-b{round((r.book_implied or 0)*1000)}"
+    return f"{r.match_id}:{outcome}:{r.anomaly_type}:{today}"
+
+
 def log_many(rows: Iterable[Anomaly]) -> int:
-    """Append rows to anomaly_log. Returns the number written."""
+    """Append rows to anomaly_log. Returns the number ACTUALLY written
+    (skips no-ops from the (match,outcome,type,day) UNIQUE dedup index).
+
+    Same anomaly on the same match × outcome × day fires once per day. The
+    bet pipeline runs once per book × per scheduled re-run (~10× per day),
+    so without this we were stacking ~70-100 rows per real anomaly.
+    """
     rows = list(rows)
     if not rows:
         return 0
+    written = 0
     with db() as conn:
-        conn.executemany(
-            """
-            INSERT INTO anomaly_log
-              (match_id, home_team, away_team, anomaly_type, description,
-               edge_shown, model_prob, book_implied)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
+        for r in rows:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO anomaly_log
+                  (match_id, home_team, away_team, anomaly_type, description,
+                   edge_shown, model_prob, book_implied, dedup_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 (r.match_id, r.home_team, r.away_team, r.anomaly_type, r.description,
-                 r.edge_shown, r.model_prob, r.book_implied)
-                for r in rows
-            ],
-        )
-    return len(rows)
+                 r.edge_shown, r.model_prob, r.book_implied, _dedup_key(r)),
+            )
+            if cur.rowcount > 0:
+                written += 1
+    return written
 
 
 def recent(limit: int = 200, since_iso: str | None = None) -> list[dict]:

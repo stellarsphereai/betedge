@@ -168,8 +168,15 @@ CREATE TABLE IF NOT EXISTS anomaly_log (
     model_prob REAL,
     book_implied REAL,
     created_at TEXT DEFAULT (datetime('now')),
-    was_bet_placed INTEGER DEFAULT 0
+    was_bet_placed INTEGER DEFAULT 0,
+    -- Dedup key: "{match_id}:{outcome}:{anomaly_type}:{YYYY-MM-DD}". Same
+    -- (match × outcome × type × day) only fires once. Without this
+    -- MARKET_CONSENSUS_DIVERGENCE was logging once per book per pipeline
+    -- run — 84 entries for one match/day. NULL allowed for legacy rows.
+    dedup_key TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_dedup ON anomaly_log(dedup_key)
+    WHERE dedup_key IS NOT NULL;
 
 -- Per-book bankroll balances. Seeded from BALANCE_<BOOK> env vars on
 -- startup (INSERT OR IGNORE so existing balances persist across restarts).
@@ -181,6 +188,24 @@ CREATE TABLE IF NOT EXISTS book_balance (
     balance_usd REAL NOT NULL DEFAULT 0,
     initial_balance_usd REAL NOT NULL DEFAULT 0,
     updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Per-team attack / defense ratings, normalized to league average.
+-- Powers Fix B (opponent-strength-adjusted xG). Computed nightly from the
+-- season-to-date stats we already pull during data_sync. Activated by the
+-- OPPONENT_ADJUSTED_XG env flag — table populates regardless so we can
+-- backtest before flipping the switch.
+CREATE TABLE IF NOT EXISTS team_ratings (
+    team_id INTEGER NOT NULL,
+    league_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    team_name TEXT,
+    attack_rating REAL,    -- ~1.0 = league average; >1 better attack
+    defense_rating REAL,   -- ~1.0 = league average; >1 better defense
+    overall_rating REAL,
+    games_played INTEGER,
+    last_updated TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (team_id, league_id, season)
 );
 
 -- Cron job execution log — APScheduler EVENT_JOB_EXECUTED / EVENT_JOB_ERROR
@@ -293,12 +318,52 @@ def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, de
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
+def _backfill_anomaly_dedup(conn: sqlite3.Connection) -> None:
+    """One-time pass: backfill `dedup_key` on existing anomaly_log rows, then
+    delete duplicates keeping the lowest id per key. The UNIQUE index is in
+    SCHEMA so creating it before this runs would fail on the existing dupes.
+    Safe to re-run — the WHERE clause skips already-keyed rows.
+    """
+    # Backfill keys for legacy rows. We don't have outcome stored, so derive
+    # a stable discriminator from (model_prob, book_implied) — same logic as
+    # _dedup_key in anomaly.py for legacy rows.
+    conn.execute(
+        """
+        UPDATE anomaly_log
+           SET dedup_key = match_id || ':' ||
+                           'm' || CAST(ROUND(COALESCE(model_prob,0)*1000) AS INT) || '-' ||
+                           'b' || CAST(ROUND(COALESCE(book_implied,0)*1000) AS INT) || ':' ||
+                           anomaly_type || ':' ||
+                           DATE(created_at)
+         WHERE dedup_key IS NULL
+        """
+    )
+    # De-dupe: keep min(id) per key.
+    conn.execute(
+        """
+        DELETE FROM anomaly_log
+         WHERE id NOT IN (
+             SELECT MIN(id) FROM anomaly_log
+             WHERE dedup_key IS NOT NULL
+             GROUP BY dedup_key
+         )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_dedup ON anomaly_log(dedup_key) "
+        "WHERE dedup_key IS NOT NULL"
+    )
+
+
 def init_db(path: str | None = None) -> None:
     p = path or DB_PATH
     with sqlite3.connect(p) as conn:
         conn.executescript(SCHEMA)
         if not _predictions_has_unique_match_id(conn):
             _migrate_predictions_unique_match_id(conn)
+        # Anomaly dedup: add column + UNIQUE index, backfill, drop dupes.
+        _add_column_if_missing(conn, "anomaly_log", "dedup_key", "TEXT")
+        _backfill_anomaly_dedup(conn)
         # Additive migrations for derived markets
         _add_column_if_missing(conn, "model_predictions", "btts_yes_pct", "REAL")
         _add_column_if_missing(conn, "model_predictions", "score_matrix_json", "TEXT")
