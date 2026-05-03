@@ -172,15 +172,28 @@ export default function MatchAnalysisPanel({ matchId, matchLabel, onClose }) {
               if (!body) return null
               const isAnomaly = s.key === 'ANOMALY FLAGS'
               const isWide = isAnomaly || s.key === 'QUICK SUMMARY' || s.key === 'BET BY BET ANALYSIS'
-              const cleanedBody = isAnomaly
+              let cleanedBody = isAnomaly
                 ? body.replace(/Fix this issue\?[^\n]*/i, '').trim()
                 : body
+              // Anomaly section status parsing: hide if STATUS: OK so the
+              // panel doesn't show a near-empty box on the happy path.
+              let anomalyStatus = null
+              if (isAnomaly) {
+                const m = cleanedBody.match(/STATUS:\s*(OK|WARNING|CRITICAL)\b/i)
+                anomalyStatus = m ? m[1].toUpperCase() : null
+                if (anomalyStatus === 'OK') return null
+                // For WARNING / CRITICAL, drop the bare token line
+                cleanedBody = cleanedBody.replace(/^.*STATUS:\s*\w+.*$/im, '').trim()
+              }
+              const tone = isAnomaly && anomalyStatus === 'CRITICAL'
+                ? 'border-bad-soft bg-bad-soft/20'
+                : isAnomaly && anomalyStatus === 'WARNING'
+                  ? 'border-warn-soft bg-warn-soft/20'
+                  : 'border-ink-700 bg-ink-950/60'
               return (
                 <div
                   key={s.key}
-                  className={`rounded-md border p-3 ${
-                    isAnomaly ? 'border-bad-soft bg-bad-soft/20' : 'border-ink-700 bg-ink-950/60'
-                  } ${isWide ? 'md:col-span-2' : ''}`}
+                  className={`rounded-md border p-3 ${tone} ${isWide ? 'md:col-span-2' : ''}`}
                 >
                   <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</div>
                   <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">{cleanedBody}</div>

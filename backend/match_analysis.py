@@ -96,10 +96,22 @@ SYSTEM_PROMPT = (
     "Kelly: $X — [high / medium / low conviction]\n"
     "Consistency: [does this bet line up with the overall match prediction?]\n"
     "VERDICT: BET IT / CAUTION / SKIP\n\n"
-    "🚨 ANOMALY FLAGS (only if confirmed issues exist)\n"
-    "Plain-English explanation. Only flag CRITICAL when a specific data "
-    "value in the input PROVES it (penalties applied, gamma, season blend, "
-    "etc.) — don't flag based on hunches about the output.\n\n"
+    "🚨 ANOMALY FLAGS\n"
+    "This section MUST start with one of these exact tokens on its own "
+    "line, with nothing else on that line:\n"
+    "  'STATUS: OK'        — no input-data issues detected. Write nothing "
+    "else after this token. Do NOT describe the inputs as 'fine' or "
+    "'baked in' or 'real and material' — those aren't issues, they're "
+    "the normal case, just write STATUS: OK.\n"
+    "  'STATUS: CRITICAL'  — a specific value in the input data PROVES a "
+    "bug (e.g. a penalty appears twice in a list, gamma is 0, season blend "
+    "is set wrong). After the token, on a new line, explain the issue in "
+    "plain English citing the exact value that proves it.\n"
+    "  'STATUS: WARNING'   — something looks unusual but you can't "
+    "confirm it from the inputs alone. Mention the concern but do not "
+    "claim a bug.\n\n"
+    "Most matches are STATUS: OK. Be conservative with CRITICAL — it "
+    "triggers a 'fix this issue' banner in the UI.\n\n"
     "═══════════════════════════════\n"
     "MY RECOMMENDATION\n"
     "═══════════════════════════════\n\n"
@@ -363,18 +375,20 @@ def _render_balances_block(book_balances: list[dict] | None) -> str:
 
 
 def _has_critical_flag(text: str) -> bool:
-    """The 'ANOMALY FLAGS' section is conditional — Claude only includes
-    it when a confirmed issue is found in the input data. Presence of the
-    section heading is the signal that the fix-it banner should show."""
+    """The 'ANOMALY FLAGS' section is REQUIRED to start with an explicit
+    'STATUS: OK' / 'STATUS: WARNING' / 'STATUS: CRITICAL' token (per the
+    system prompt). We only flag the bet as critical when STATUS: CRITICAL
+    appears within the section body. Anything else — including absent
+    section, OK status, or warning — does not trigger the fix-it banner.
+
+    Earlier substring heuristics over-fired: a Chelsea-Forest analysis
+    that ended with 'No other anomalies detected' was being treated as
+    critical because the body had 'detected' but not 'NONE'."""
     upper = (text or "").upper()
     if "ANOMALY FLAGS" not in upper:
         return False
-    # Heuristic: section is present but body just says 'none detected' →
-    # not actually critical. Drop the false positive.
-    after = upper.split("ANOMALY FLAGS", 1)[1][:200]
-    if "NONE" in after and "DETECT" in after:
-        return False
-    return True
+    after = upper.split("ANOMALY FLAGS", 1)[1][:500]
+    return "STATUS: CRITICAL" in after
 
 
 # --- main entry --------------------------------------------------------------
