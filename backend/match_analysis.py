@@ -33,7 +33,7 @@ log = logging.getLogger("arb.analysis")
 MODEL_NAME = "claude-haiku-4-5"
 DEFAULT_DAILY_CAP = 50
 CACHE_TTL_S = 30 * 60               # 30 minutes
-MAX_OUTPUT_TOKENS = 1024            # ~400-600 expected, room to spare
+MAX_OUTPUT_TOKENS = 1500            # ANOMALY FLAGS section was hitting 1024 cap mid-sentence
 INPUT_PRICE_PER_M = 1.0             # USD per 1M tokens
 OUTPUT_PRICE_PER_M = 5.0
 
@@ -94,7 +94,13 @@ SYSTEM_PROMPT = (
     "own lines:\n\n"
     "🔍 QUICK SUMMARY\n"
     "Three sentences. What this match looks like. What the model expects. "
-    "Whether it's worth betting — yes or no.\n\n"
+    "Whether it's worth betting — yes or no.\n"
+    "STRICT NUMERIC RULE for this section: cite at most ONE percentage "
+    "(the model's home-win figure from MODEL OUTPUT). Do not invent "
+    "ranges (no '15–19pp', no '8 to 19 percentage points'). Do not "
+    "claim sharp books disagree with the model unless the BETS block "
+    "below contains a bet whose flags include SHARP_DIVERGE for that "
+    "specific market.\n\n"
     "⚽ TEAM FORM\n"
     "Both teams' recent form in plain English. Any injuries or rest concerns.\n\n"
     "🔢 XG CHECK\n"
@@ -253,10 +259,20 @@ def _build_user_prompt(
             pass
 
     if anomalies:
-        anom_lines = [
-            f"- {a.get('anomaly_type')}: {a.get('description') or '(no description)'}"
-            for a in anomalies
-        ]
+        # Strip the prose description and emit only structured numbers so
+        # Haiku has no pre-written sentences to paraphrase. The bet-level
+        # block below already contains per-bet model%/market% pairs the AI
+        # can cite verbatim.
+        anom_lines = []
+        for a in anomalies:
+            t = a.get('anomaly_type')
+            mp = a.get('model_prob')
+            bp = a.get('book_implied')
+            es = a.get('edge_shown')
+            mp_s = f"{mp*100:.1f}%" if mp is not None else "?"
+            bp_s = f"{bp*100:.1f}%" if bp is not None else "?"
+            es_s = f"{es*100:.1f}pp" if es is not None else "?"
+            anom_lines.append(f"- {t}: model={mp_s} market={bp_s} gap={es_s}")
         anom_str = "\n".join(anom_lines)
     else:
         anom_str = "None flagged."
