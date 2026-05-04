@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Activity, AlertTriangle, RefreshCw, Sun, Moon } from 'lucide-react'
 
 const WINDOW_OPTIONS = [
   { value: 24,    label: '24h' },
@@ -11,7 +11,8 @@ const WINDOW_OPTIONS = [
 export default function Header({ league, onLeagueChange, windowHours, onWindowChange,
                                  lastFetched, loading, error, ageS, sportsbookCount,
                                  cacheAgeS, onRefresh,
-                                 anomalyCount = 0, anomalyExcluding = 0, onJumpToAnomalies }) {
+                                 anomalyCount = 0, anomalyExcluding = 0, onJumpToAnomalies,
+                                 theme, onToggleTheme }) {
   const status = loading ? 'Refreshing…' : error ? `Error: ${error}` : lastFetched
     ? `Updated ${lastFetched.toLocaleTimeString()}` : 'Idle'
   const cacheAgeMin = cacheAgeS != null ? Math.round(cacheAgeS / 60) : null
@@ -69,6 +70,14 @@ export default function Header({ league, onLeagueChange, windowHours, onWindowCh
         >
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           Refresh odds
+        </button>
+        <button
+          onClick={onToggleTheme}
+          title={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+          aria-label="Toggle theme"
+          className="flex items-center justify-center bg-ink-900 border border-ink-700 hover:border-accent text-slate-200 rounded-full w-8 h-8"
+        >
+          {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
         </button>
         <select
           value={windowHours}

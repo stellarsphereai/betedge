@@ -17,6 +17,17 @@ import PortfolioView from './components/PortfolioView'
 export default function App() {
   const [league, setLeague] = useState('epl')
   const [tab, setTab] = useState('all')
+  // Theme: 'dark' (default) | 'light'. Stored on <html data-theme="…"> so a
+  // single CSS layer in index.css can override the dark Tailwind utilities
+  // without rewriting every component class.
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('betedge_theme') || 'dark' } catch { return 'dark' }
+  })
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try { localStorage.setItem('betedge_theme', theme) } catch {}
+  }, [theme])
+  const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light')
   const [windowHours, setWindowHours] = useState(72)
   const [flashedMatchId, setFlashedMatchId] = useState(null)
   const [stats, setStats] = useState(null)
@@ -230,6 +241,8 @@ export default function App() {
         anomalyCount={anomalies?.count_today ?? 0}
         anomalyExcluding={counts.anomalies_excluding}
         onJumpToAnomalies={() => setTab('anomalies')}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       <BookBalanceStrip refreshKey={lastFetched?.getTime?.()} />
