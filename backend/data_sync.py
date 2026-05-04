@@ -419,6 +419,23 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             kickoff_iso = fx["fixture"]["date"]
             h_season_for, h_season_against = season_avg.get(home_id, (None, None))
             a_season_for, a_season_against = season_avg.get(away_id, (None, None))
+            # Fix A part 2: for UCL knockout matches, the API-Football
+            # season aggregate is dominated by group-stage results (top
+            # clubs ran up scores against weaker opponents — Arsenal's
+            # season xG_for=2.2 vs knockout-only mean of 1.36). The
+            # 30/70 recent/season blend below would then pull the
+            # prediction back into "group-stage Arsenal" territory.
+            # Override the season component to the same knockout-only
+            # xG history we already filtered for the recent window —
+            # the team's full body of knockout work IS the right
+            # baseline for a knockout match.
+            if is_ucl_knockout:
+                if home_xg_for and home_xg_against:
+                    h_season_for     = sum(home_xg_for) / len(home_xg_for)
+                    h_season_against = sum(home_xg_against) / len(home_xg_against)
+                if away_xg_for and away_xg_against:
+                    a_season_for     = sum(away_xg_for) / len(away_xg_for)
+                    a_season_against = sum(away_xg_against) / len(away_xg_against)
             home_form = model.TeamForm(
                 name=team_aliases.canonical(fx["teams"]["home"]["name"]),
                 xg_for=home_xg_for,
