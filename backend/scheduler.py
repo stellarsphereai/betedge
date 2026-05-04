@@ -219,6 +219,143 @@ async def job_auto_settle_open_bets():
     }
 
 
+async def _wrap(name: str, coro_factory):
+    """Adapter — APScheduler wants a no-arg async fn; automation_runner
+    wants (name, fn) where fn is also no-arg async."""
+    import automation_runner
+    return await automation_runner.run_task(name, coro_factory)
+
+
+async def job_nightly_model_validation():
+    import automation_tasks
+    return await _wrap("model_validation", automation_tasks.task_model_validation)
+
+async def job_nightly_auto_calibration():
+    import automation_tasks
+    return await _wrap("auto_calibration", automation_tasks.task_auto_calibration)
+
+async def job_nightly_wc_data_prep():
+    import automation_tasks
+    return await _wrap("wc_data_prep", automation_tasks.task_wc_data_prep)
+
+async def job_nightly_system_health():
+    import automation_tasks
+    return await _wrap("system_health", automation_tasks.task_system_health)
+
+async def job_nightly_feature_verification():
+    import automation_tasks
+    return await _wrap("feature_verification", automation_tasks.task_feature_verification)
+
+async def job_nightly_wc_configuration():
+    import automation_tasks
+    return await _wrap("wc_configuration", automation_tasks.task_wc_configuration)
+
+async def job_nightly_real_money_performance():
+    import automation_tasks
+    return await _wrap("real_money_performance", automation_tasks.task_real_money_performance)
+
+async def job_nightly_readiness_score():
+    import automation_tasks
+    return await _wrap("readiness_score", automation_tasks.task_readiness_score)
+
+async def job_nightly_early_wc_opportunities():
+    import automation_tasks
+    return await _wrap("early_wc_opportunities", automation_tasks.task_early_wc_opportunities)
+
+
+async def job_consec_failure_alert():
+    """06:00 NY — if any nightly task has 3 consecutive FAILs, urgent email.
+    Spec section 2: '3 consecutive failures trigger urgent 6am alert email'.
+    DEFERRED rows don't count; they reset the streak."""
+    import automation_runner
+    tasks = [
+        "model_validation", "auto_calibration", "wc_data_prep", "system_health",
+        "feature_verification", "wc_configuration", "real_money_performance",
+        "readiness_score", "early_wc_opportunities",
+    ]
+    escalated = []
+    for t in tasks:
+        n = automation_runner.consecutive_failures(t)
+        if n >= 3:
+            escalated.append((t, n))
+    if not escalated:
+        log.info("scheduler: 06:00 consec-failure check — all clear")
+        return
+    body_lines = [
+        "URGENT — three or more consecutive nightly failures detected.",
+        "",
+        "Tasks needing attention:",
+    ]
+    for t, n in escalated:
+        last = automation_runner.latest_run(t) or {}
+        body_lines.append(f"  - {t}: {n} consecutive FAILs")
+        if last.get("error_message"):
+            body_lines.append(f"      last error: {last['error_message'][:200]}")
+    body = "\n".join(body_lines)
+    try:
+        digest.send("BetEdge — URGENT: nightly automation failures", body)
+    except Exception:
+        log.exception("scheduler: 06:00 consec-failure email send crashed")
+
+
+async def job_morning_report():
+    """08:00 NY — render the morning automation report and email it.
+    Combines:
+      - overnight task pass/fail rollup (automation_log today)
+      - real-money status (digest's existing block via /stats)
+      - readiness score + days-to-kickoff
+      - manual action items (placeholder for spec 5)
+    """
+    import automation_runner
+    runs = automation_runner.todays_runs()
+    today = datetime.now(timezone.utc).date()
+    days_to_kickoff = (datetime(2026, 6, 11).date() - today).days
+
+    # Roll up readiness from the most recent task run
+    readiness = next((r for r in reversed(runs) if r["task_name"] == "readiness_score"), None)
+    pct = readiness and readiness.get("result_summary", "").split("(")[1].split("%")[0] if readiness else "?"
+    flag = readiness and readiness.get("status") or "?"
+
+    body_lines = []
+    body_lines.append("=== OVERNIGHT COMPLETIONS ===")
+    if runs:
+        for r in runs:
+            icon = "✅" if r["status"] == "PASS" else "⏸" if r["status"] == "DEFERRED" else "❌"
+            body_lines.append(f"  {icon} {r['task_name']}: {r['result_summary']}")
+    else:
+        body_lines.append("  (no automation tasks logged today)")
+
+    # Real money status — reuse the existing renderer indirectly by calling /stats
+    try:
+        # local read — same module path as the FastAPI process
+        with db() as conn:
+            cash = conn.execute(
+                """
+                SELECT COALESCE(SUM(CASE WHEN status IN ('won','lost') THEN profit ELSE 0 END), 0) AS pnl,
+                       COALESCE(SUM(CASE WHEN status='won' THEN 1 ELSE 0 END), 0) AS won,
+                       COALESCE(SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END), 0) AS lost
+                FROM bets_placed WHERE is_paper = 0
+                """
+            ).fetchone()
+        body_lines.append("")
+        body_lines.append("=== REAL MONEY STATUS ===")
+        body_lines.append(f"  Total P&L: {cash['pnl']:+.2f}")
+        body_lines.append(f"  Won/Lost:  {cash['won']}/{cash['lost']}")
+    except Exception:
+        log.exception("morning_report: real-money block failed")
+
+    body_lines.append("")
+    body_lines.append("=== READINESS SCORE ===")
+    body_lines.append(f"  {pct}% — {flag} — {days_to_kickoff} days to kickoff")
+
+    body = "\n".join(body_lines)
+    subject = f"BetEdge — {today.isoformat()} — WC Readiness {pct}% · {days_to_kickoff} days to kickoff"
+    try:
+        digest.send(subject, body)
+    except Exception:
+        log.exception("morning_report: send crashed")
+
+
 async def job_real_trade_audit():
     """02:45 NY-local — refresh the real_trade_audit table after the 02:30
     auto-settle pass. Spec 1.7: per-cash-bet comparison against paper
@@ -371,6 +508,17 @@ _JOB_LABELS = {
     "activate_fix_b":       "Activate Fix B (opponent-adjusted xG)",
     "auto_settle":          "Auto-settle open bets",
     "real_trade_audit":     "Real-trade audit refresh",
+    "nightly_model_validation":       "Nightly: model validation",
+    "nightly_auto_calibration":       "Nightly: auto-calibration",
+    "nightly_wc_data_prep":           "Nightly: WC data prep",
+    "nightly_system_health":          "Nightly: system health",
+    "nightly_feature_verification":   "Nightly: feature verification",
+    "nightly_wc_configuration":       "Nightly: WC configuration",
+    "nightly_real_money_performance": "Nightly: real-money performance",
+    "nightly_readiness_score":        "Nightly: readiness score",
+    "nightly_early_wc_opportunities": "Nightly: early WC opportunities",
+    "consec_failure_alert":           "Consec-failure alert (06:00)",
+    "morning_report":                 "Morning automation report (08:00)",
 }
 
 
@@ -465,6 +613,22 @@ def build() -> AsyncIOScheduler:
         ("sync_world_cup",   _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
         ("real_trade_audit",      job_real_trade_audit,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
+        # Spec section 2 — 9-task nightly automation pipeline (May 31 → June 10).
+        # All tasks log to automation_log; deferred tasks re-arm automatically
+        # when their preconditions are met. The 06:00 watchdog escalates any
+        # 3-consecutive-failure streak to email; the 08:00 morning report
+        # rolls up overnight pass/fail, real-money status, and readiness score.
+        ("nightly_model_validation",       job_nightly_model_validation,       CronTrigger(hour=0,  minute=0,  timezone=TIMEZONE)),
+        ("nightly_auto_calibration",       job_nightly_auto_calibration,       CronTrigger(hour=0,  minute=30, timezone=TIMEZONE)),
+        ("nightly_wc_data_prep",           job_nightly_wc_data_prep,           CronTrigger(hour=1,  minute=0,  timezone=TIMEZONE)),
+        ("nightly_system_health",          job_nightly_system_health,          CronTrigger(hour=1,  minute=30, timezone=TIMEZONE)),
+        ("nightly_feature_verification",   job_nightly_feature_verification,   CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
+        ("nightly_wc_configuration",       job_nightly_wc_configuration,       CronTrigger(hour=2,  minute=15, timezone=TIMEZONE)),
+        ("nightly_real_money_performance", job_nightly_real_money_performance, CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
+        ("nightly_readiness_score",        job_nightly_readiness_score,        CronTrigger(hour=4,  minute=0,  timezone=TIMEZONE)),
+        ("nightly_early_wc_opportunities", job_nightly_early_wc_opportunities, CronTrigger(hour=5,  minute=0,  timezone=TIMEZONE)),
+        ("consec_failure_alert",           job_consec_failure_alert,           CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
+        ("morning_report",                 job_morning_report,                 CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_digest",        job_morning_digest,            CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("closing_and_pnl",       job_closing_lines_and_pnl,     CronTrigger(hour=23, minute=55, timezone=TIMEZONE)),

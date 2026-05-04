@@ -198,6 +198,39 @@ CREATE TABLE IF NOT EXISTS book_balance (
 -- season-to-date stats we already pull during data_sync. Activated by the
 -- OPPONENT_ADJUSTED_XG env flag — table populates regardless so we can
 -- backtest before flipping the switch.
+-- Spec section 2 — nightly automation pipeline.
+-- One row per task per run. Status = 'PASS' / 'FAIL' / 'DEFERRED' / 'SKIP'.
+-- Three consecutive FAIL rows for the same task_name trigger the 6am
+-- urgent alert email (handled by automation_runner.consecutive_failures).
+CREATE TABLE IF NOT EXISTS automation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_date TEXT NOT NULL,             -- 'YYYY-MM-DD' UTC
+    task_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    result_summary TEXT,
+    error_message TEXT,
+    duration_seconds REAL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_automation_log_run ON automation_log(run_date, task_name);
+CREATE INDEX IF NOT EXISTS idx_automation_log_task_created ON automation_log(task_name, created_at);
+
+-- Spec 2.8 — 29-item World Cup readiness checklist. Each row is one
+-- criterion with a current status. The readiness-score task rolls the
+-- whole table up to a percentage (completed/29 * 100) and into the
+-- daily morning report.
+CREATE TABLE IF NOT EXISTS wc_readiness_checklist (
+    item_id TEXT PRIMARY KEY,           -- '1.1', '2.3', etc.
+    category TEXT NOT NULL,             -- 'model' | 'system' | 'features' | 'real_money' | 'wc_data' | 'wc_config' | 'fix_b'
+    label TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'pass' | 'fail' | 'manual'
+    priority TEXT NOT NULL DEFAULT 'normal', -- 'normal' | 'low' (low = July 20 target, hidden from June digest)
+    target_date TEXT,                    -- ISO date, used by digest gate
+    manual_required INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    last_checked TEXT
+);
+
 -- Real-trade audit (spec 1.7) — for each cash bet, capture whether a
 -- paper counterpart existed, how the executed odds and stake compared
 -- to that counterpart, and an overall "execution quality" score.

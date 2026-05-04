@@ -1704,6 +1704,54 @@ async def admin_accuracy_history(league: str | None = None, limit: int = Query(5
 
 # --- World Cup calibration (separate from regular leagues) -------------------
 
+@app.post("/admin/automation/run-now", dependencies=[Depends(admin_auth)])
+async def admin_run_automation_now():
+    """Spec section 2 — fire all 9 nightly tasks back-to-back. Used to
+    seed the first morning report and to re-run after fixing a failure
+    without waiting for the next 00:00. Each task logs its own row to
+    automation_log so the morning report has data to roll up."""
+    import automation_runner
+    import automation_tasks
+    import sched as sched_module
+    tasks = [
+        ("model_validation",       automation_tasks.task_model_validation),
+        ("auto_calibration",       automation_tasks.task_auto_calibration),
+        ("wc_data_prep",           automation_tasks.task_wc_data_prep),
+        ("system_health",          automation_tasks.task_system_health),
+        ("feature_verification",   automation_tasks.task_feature_verification),
+        ("wc_configuration",       automation_tasks.task_wc_configuration),
+        ("real_money_performance", automation_tasks.task_real_money_performance),
+        ("readiness_score",        automation_tasks.task_readiness_score),
+        ("early_wc_opportunities", automation_tasks.task_early_wc_opportunities),
+    ]
+    results = []
+    for name, fn in tasks:
+        results.append(await automation_runner.run_task(name, fn))
+    return {"ran": len(results), "results": results}
+
+
+@app.get("/admin/automation/status", dependencies=[Depends(admin_auth)])
+async def admin_automation_status():
+    """Today's automation_log rollup + readiness checklist for the admin page."""
+    import automation_runner
+    automation_tasks_module = __import__("automation_tasks")
+    automation_tasks_module.seed_checklist()  # idempotent
+    runs = automation_runner.todays_runs()
+    with db() as conn:
+        checklist = conn.execute(
+            """
+            SELECT item_id, category, label, status, priority, target_date,
+                   manual_required, notes, last_checked
+            FROM wc_readiness_checklist
+            ORDER BY item_id
+            """
+        ).fetchall()
+    return {
+        "runs": runs,
+        "checklist": [dict(r) for r in checklist],
+    }
+
+
 @app.get("/admin/real-trade-audit", dependencies=[Depends(admin_auth)])
 async def admin_real_trade_audit():
     """Spec 1.7 — per-cash-bet audit (paper counterpart, odds/stake deltas,
