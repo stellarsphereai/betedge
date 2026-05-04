@@ -259,21 +259,40 @@ def _build_user_prompt(
             pass
 
     if anomalies:
-        # Strip the prose description and emit only structured numbers so
-        # Haiku has no pre-written sentences to paraphrase. The bet-level
-        # block below already contains per-bet model%/market% pairs the AI
-        # can cite verbatim.
+        # Filter to anomalies whose (model_prob, book_implied) pair matches a
+        # visible bet in the BETS block — anomalies on PHANTOM_EDGE-excluded
+        # or otherwise-filtered bets are misleading because the AI can't see
+        # the underlying bet and tries to attribute the anomaly to the wrong
+        # market. Match on rounded prob pair (0.001 precision is enough to
+        # disambiguate home/draw/away/over/under/yes/no inside one match).
+        visible_keys = set()
+        for b in (ev_bets or []):
+            mp = b.get("model_prob")
+            tp = b.get("true_implied_prob")
+            if mp is not None and tp is not None:
+                visible_keys.add((round(mp, 3), round(tp, 3)))
+        # Match anomaly model_prob against visible bets' model_prob; book_implied
+        # is the consensus average rather than per-book so we match on model
+        # prob alone (high precision is enough since each bet has a distinct
+        # model_prob within one match).
+        visible_model_probs = {round(b.get("model_prob"), 3) for b in (ev_bets or []) if b.get("model_prob") is not None}
         anom_lines = []
         for a in anomalies:
             t = a.get('anomaly_type')
             mp = a.get('model_prob')
+            # Per-prediction anomalies (FORM_DIVERGE, PENALTY_STACK) have no
+            # model_prob/book_implied — pass them through unconditionally
+            # since they describe match-level inputs, not specific bets.
+            is_per_prediction = mp is None or t in ("FORM_DIVERGE", "PENALTY_STACK", "GAMMA_INVARIANT")
+            if not is_per_prediction and visible_model_probs and round(mp, 3) not in visible_model_probs:
+                continue  # bet was filtered out — don't confuse the AI
             bp = a.get('book_implied')
             es = a.get('edge_shown')
             mp_s = f"{mp*100:.1f}%" if mp is not None else "?"
             bp_s = f"{bp*100:.1f}%" if bp is not None else "?"
             es_s = f"{es*100:.1f}pp" if es is not None else "?"
             anom_lines.append(f"- {t}: model={mp_s} market={bp_s} gap={es_s}")
-        anom_str = "\n".join(anom_lines)
+        anom_str = "\n".join(anom_lines) if anom_lines else "None flagged for visible bets."
     else:
         anom_str = "None flagged."
 
