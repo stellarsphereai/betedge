@@ -845,17 +845,23 @@ async def get_stats():
         ).fetchone()
     real_pnl = float(rm["realized_pnl"] or 0)
     deployed = float(rm["deployed"] or 0)
+    initial  = float(bal["init"]  or 0)
     real_money = {
         "settled": int(rm["settled"] or 0),
         "won":     int(rm["won"] or 0),
         "lost":    int(rm["lost"] or 0),
         "open":    int(rm["open"] or 0),
         "realized_pnl": round(real_pnl, 2),
-        "realized_pct": round(real_pnl / deployed, 4) if deployed > 0 else None,
-        "deployed":     round(deployed, 2),
-        "avg_clv":      (round(float(rm["avg_clv"]), 4) if rm["avg_clv"] is not None else None),
+        # Bankroll-relative — % of total deposited across books. ROI of
+        # stakes (real_pnl / deployed) is also exposed for the curious;
+        # the dashboard card uses bankroll_pct because it's the honest
+        # "where am I overall" reading.
+        "realized_pct":   round(real_pnl / initial,  4) if initial  > 0 else None,
+        "roi_of_stakes":  round(real_pnl / deployed, 4) if deployed > 0 else None,
+        "deployed":       round(deployed, 2),
+        "avg_clv":        (round(float(rm["avg_clv"]), 4) if rm["avg_clv"] is not None else None),
         "bankroll_total":   round(float(bal["total"] or 0), 2),
-        "bankroll_initial": round(float(bal["init"]  or 0), 2),
+        "bankroll_initial": round(initial, 2),
     }
     return {
         "bankroll": BANKROLL,
