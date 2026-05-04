@@ -152,6 +152,73 @@ async def job_monthly_calibration_check():
         log.exception("scheduler: monthly calibration check crashed")
 
 
+async def job_auto_settle_open_bets():
+    """02:00 NY-local — sweep every open bet (paper + real), look up its
+    fixture status from API-Football, and call mark_match_result() for any
+    match that finished. Per-bet settlement was already implemented (manual
+    'auto-mark' button on each row); this job just runs the same flow on a
+    timer so cash bets can't go un-settled overnight.
+
+    Idempotent: mark_match_result skips already-settled bets, so running
+    twice in a row is safe. Fixtures still in progress get skipped quietly.
+    """
+    import httpx
+    import api_football
+    log.info("scheduler: 02:00 auto-settle sweep")
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT match_id FROM bets_placed
+            WHERE status = 'open'
+              AND match_id LIKE 'af-%'
+            """
+        ).fetchall()
+    open_match_ids = [r["match_id"] for r in rows]
+    log.info("auto-settle: %d open match(es) to check", len(open_match_ids))
+    settled_total = 0
+    skipped_in_progress = 0
+    errors = 0
+    async with httpx.AsyncClient() as client:
+        for mid in open_match_ids:
+            try:
+                fixture_id = int(mid.removeprefix("af-"))
+                fixture = await api_football.fetch_fixture(client, fixture_id)
+            except Exception as e:
+                log.warning("auto-settle: %s fetch failed: %s", mid, e)
+                errors += 1
+                continue
+            if not fixture:
+                continue
+            status_short = (
+                fixture.get("fixture", {}).get("status", {}).get("short") or ""
+            ).upper()
+            if status_short != "FT":
+                skipped_in_progress += 1
+                continue
+            home_goals = fixture.get("goals", {}).get("home")
+            away_goals = fixture.get("goals", {}).get("away")
+            if home_goals is None or away_goals is None:
+                continue
+            try:
+                result = clv_tracker.mark_match_result(
+                    mid, home_goals=int(home_goals), away_goals=int(away_goals)
+                )
+                settled_total += int(result.get("settled_count") or 0)
+            except Exception:
+                log.exception("auto-settle: %s mark_match_result crashed", mid)
+                errors += 1
+    log.info(
+        "auto-settle: settled %d bet(s), skipped %d in-progress, %d errors",
+        settled_total, skipped_in_progress, errors,
+    )
+    return {
+        "settled": settled_total,
+        "skipped_in_progress": skipped_in_progress,
+        "errors": errors,
+        "matches_checked": len(open_match_ids),
+    }
+
+
 async def job_closing_lines_and_pnl():
     """23:55 NY: sweep closing lines, snapshot P&L, then run the self-eval
     pipeline (result logging + 5 bias checks per league). Each step wrapped so
@@ -288,6 +355,7 @@ _JOB_LABELS = {
     "wc_nightly_check":     "World Cup nightly check",
     "daily_status_email":   "Daily cron status email",
     "activate_fix_b":       "Activate Fix B (opponent-adjusted xG)",
+    "auto_settle":          "Auto-settle open bets",
 }
 
 
@@ -380,6 +448,7 @@ def build() -> AsyncIOScheduler:
         ("sync_ucl_final",   _league_sync_job("ucl"),       CronTrigger(year=2026, month=5, day=30, hour=0, minute=0, timezone=TIMEZONE)),
         ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
         ("sync_world_cup",   _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
+        ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_digest",        job_morning_digest,            CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("closing_and_pnl",       job_closing_lines_and_pnl,     CronTrigger(hour=23, minute=55, timezone=TIMEZONE)),
