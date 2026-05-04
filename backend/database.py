@@ -352,9 +352,16 @@ def _backfill_anomaly_dedup(conn: sqlite3.Connection) -> None:
          )
         """
     )
+    # Full (non-partial) UNIQUE index. SQLite's UPSERT (ON CONFLICT(dedup_key)
+    # DO UPDATE) requires a real UNIQUE constraint or non-partial unique
+    # index — partial indexes are silently ignored as conflict targets and
+    # produce "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+    # constraint". SQLite considers NULLs distinct from each other inside
+    # UNIQUE indexes, so any backfilled rows that ended up with NULL won't
+    # collide.
+    conn.execute("DROP INDEX IF EXISTS idx_anomaly_dedup")
     conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_dedup ON anomaly_log(dedup_key) "
-        "WHERE dedup_key IS NOT NULL"
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_dedup ON anomaly_log(dedup_key)"
     )
 
 
