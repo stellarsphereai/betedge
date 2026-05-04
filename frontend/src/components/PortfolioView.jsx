@@ -746,7 +746,10 @@ export default function PortfolioView() {
   const [bookBalances, setBookBalances] = useState([])
   const [summary, setSummary] = useState(null)
   const [projection, setProjection] = useState(null)
-  const [paperOnly, setPaperOnly] = useState(true)
+  // 'all' | 'paper' | 'cash'. Spec 1.5 — three tabs in portfolio so paper
+  // and real-money performance can be inspected separately or together.
+  const [mode, setMode] = useState('paper')
+  const paperOnly = mode === 'paper'
   const [filters, setFilters] = useState({ league: '', market: '', status: '', dateFrom: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -754,16 +757,31 @@ export default function PortfolioView() {
   async function load() {
     setLoading(true); setError(null)
     try {
+      // Summary endpoint takes is_paper bool; for 'all' we sum both later.
+      const summaryReq = mode === 'all'
+        ? Promise.all([api.portfolioSummary({ isPaper: true }), api.portfolioSummary({ isPaper: false })])
+            .then(([sp, sc]) => ({
+              starting_bankroll: (sp.starting_bankroll || 0) + (sc.starting_bankroll || 0),
+              realized_pnl:      (sp.realized_pnl || 0)     + (sc.realized_pnl || 0),
+              realized_pct:      ((sp.realized_pnl || 0) + (sc.realized_pnl || 0)) /
+                                 Math.max(1, (sp.starting_bankroll || 0) + (sc.starting_bankroll || 0)),
+              expected_pnl:      (sp.expected_pnl || 0)     + (sc.expected_pnl || 0),
+              avg_edge:          ((sp.avg_edge || 0) + (sc.avg_edge || 0)) / 2,
+              current_value_best:  (sp.current_value_best  || 0) + (sc.current_value_best  || 0),
+              current_value_worst: (sp.current_value_worst || 0) + (sc.current_value_worst || 0),
+            }))
+        : api.portfolioSummary({ isPaper: paperOnly })
       const [s, b, p, bb] = await Promise.all([
-        api.portfolioSummary({ isPaper: paperOnly }),
+        summaryReq,
         api.bets(1000),
         api.portfolioProjection({ matches: 64, stake: 20, edge: 0.06, betsPerMatch: 1.5 }),
         fetch('/book-balances').then(r => r.ok ? r.json() : null).catch(() => null),
       ])
       setSummary(s)
-      // filter to paper/real client-side too in case the bets endpoint returned both
       const allBets = b.bets || []
-      const filtered = allBets.filter(x => paperOnly ? x.is_paper === 1 : x.is_paper !== 1)
+      const filtered = mode === 'all'
+        ? allBets
+        : allBets.filter(x => paperOnly ? x.is_paper === 1 : x.is_paper !== 1)
       setBets(filtered)
       // Charts always show both paper + cash, side-by-side, regardless of the
       // top toggle (the toggle only affects the summary cards + bet table).
@@ -775,7 +793,7 @@ export default function PortfolioView() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [paperOnly])
+  useEffect(() => { load() }, [mode])
 
   const startingBankroll = summary?.starting_bankroll ?? 1000
   const defaultEdge = summary?.avg_edge || 0.06
@@ -794,28 +812,38 @@ export default function PortfolioView() {
         >Export CSV</button>
       </div>
 
-      {/* Mode toggle — full row so it's not lost in the header */}
+      {/* Mode toggle — three tabs: All / Paper / Cash (spec 1.5) */}
       <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2 bg-ink-900 border border-ink-700 rounded-lg">
         <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">View:</span>
         <div className="bg-ink-800 border border-ink-700 rounded-full p-0.5 flex">
           <button
-            onClick={() => setPaperOnly(true)}
-            className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${paperOnly ? 'bg-accent text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+            onClick={() => setMode('all')}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${mode === 'all' ? 'bg-good text-ink-950 shadow' : 'text-slate-400 hover:text-slate-200'}`}
+          >🧮 All bets</button>
+          <button
+            onClick={() => setMode('paper')}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${mode === 'paper' ? 'bg-accent text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
           >📝 Paper trade</button>
           <button
-            onClick={() => setPaperOnly(false)}
-            className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${!paperOnly ? 'bg-warn text-ink-950 shadow' : 'text-slate-400 hover:text-slate-200'}`}
+            onClick={() => setMode('cash')}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${mode === 'cash' ? 'bg-warn text-ink-950 shadow' : 'text-slate-400 hover:text-slate-200'}`}
           >💵 Cash trade</button>
         </div>
         <span className="text-[11px] text-slate-500 ml-auto">
-          {paperOnly
+          {mode === 'all'
+            ? 'Showing every bet — paper and cash combined.'
+            : mode === 'paper'
             ? 'Showing simulated bets — book balances unaffected.'
             : 'Showing real-money bets — these moved your book balances when settled.'}
         </span>
       </div>
 
       {/* Mode banner */}
-      {paperOnly ? (
+      {mode === 'all' ? (
+        <div className="mb-3 px-3 py-2 rounded-md text-xs bg-good-soft text-good border border-good-soft">
+          Combined view — paper + cash bets together. Book balances reflect cash settlements only.
+        </div>
+      ) : mode === 'paper' ? (
         <div className="mb-3 px-3 py-2 rounded-md text-xs bg-warn-soft text-warn border border-warn-soft">
           PAPER TRADING — not real money. P&L is simulated against settled match outcomes.
         </div>
@@ -833,7 +861,7 @@ export default function PortfolioView() {
       <PortfolioByBook
         bets={bets}
         bookBalances={bookBalances}
-        mode={paperOnly ? 'paper' : 'cash'}
+        mode={mode === 'all' ? 'all' : mode === 'paper' ? 'paper' : 'cash'}
       />
 
       {/* Two-column layout: table+charts on left, calculator on right */}

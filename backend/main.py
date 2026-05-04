@@ -822,6 +822,41 @@ async def create_bet(payload: BetInput):
 async def get_stats():
     weekly = clv_tracker.weekly_report()
     accuracy_report = accuracy.model_accuracy_report()
+    # Real-money rollup — drives the dashboard's REAL MONEY P&L stat card.
+    # Pulled separately from `weekly` (which mixes paper + cash) so the
+    # stat card reflects only actual bankroll-affecting activity.
+    with db() as conn:
+        rm = conn.execute(
+            """
+            SELECT
+              SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END) AS settled,
+              SUM(CASE WHEN status='won' THEN 1 ELSE 0 END)  AS won,
+              SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END) AS lost,
+              SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS open,
+              COALESCE(SUM(CASE WHEN status IN ('won','lost') THEN profit ELSE 0 END), 0) AS realized_pnl,
+              COALESCE(SUM(CASE WHEN status IN ('won','lost') THEN stake  ELSE 0 END), 0) AS deployed,
+              AVG(CASE WHEN status IN ('won','lost') AND clv IS NOT NULL THEN clv END) AS avg_clv
+            FROM bets_placed WHERE is_paper = 0
+            """
+        ).fetchone()
+        bal = conn.execute(
+            "SELECT COALESCE(SUM(balance_usd),0) AS total, COALESCE(SUM(initial_balance_usd),0) AS init "
+            "FROM book_balance"
+        ).fetchone()
+    real_pnl = float(rm["realized_pnl"] or 0)
+    deployed = float(rm["deployed"] or 0)
+    real_money = {
+        "settled": int(rm["settled"] or 0),
+        "won":     int(rm["won"] or 0),
+        "lost":    int(rm["lost"] or 0),
+        "open":    int(rm["open"] or 0),
+        "realized_pnl": round(real_pnl, 2),
+        "realized_pct": round(real_pnl / deployed, 4) if deployed > 0 else None,
+        "deployed":     round(deployed, 2),
+        "avg_clv":      (round(float(rm["avg_clv"]), 4) if rm["avg_clv"] is not None else None),
+        "bankroll_total":   round(float(bal["total"] or 0), 2),
+        "bankroll_initial": round(float(bal["init"]  or 0), 2),
+    }
     return {
         "bankroll": BANKROLL,
         "league_mode": LEAGUE_MODE,
@@ -829,6 +864,7 @@ async def get_stats():
         "max_stake_pct": MAX_STAKE_PCT,
         "weekly": weekly,
         "accuracy": accuracy_report,
+        "real_money": real_money,
     }
 
 
