@@ -175,6 +175,28 @@ def render(
     mode_label = "WORLD CUP LIVE" if league_mode == "world_cup" else "EPL PAPER TRADE"
     lines.append(f"Mode: {mode_label}")
 
+    # Real money rollup — only render when at least one cash bet has been
+    # logged. During the paper-only phase this section is silent so the
+    # digest doesn't pad with empty zeroes.
+    rm = (stats_payload or {}).get("real_money") or {}
+    if (rm.get("settled") or 0) > 0 or (rm.get("open") or 0) > 0:
+        lines.append("")
+        lines.append("=== REAL MONEY STATUS ===")
+        lines.append(f"Total deployed: ${rm.get('deployed') or 0:.2f}")
+        pnl = rm.get("realized_pnl") or 0
+        pct = rm.get("realized_pct")
+        pct_str = f" ({pct*100:+.1f}% of bankroll)" if pct is not None else ""
+        lines.append(f"Total profit:   {pnl:+.2f}{pct_str}")
+        settled = rm.get("settled") or 0
+        won = rm.get("won") or 0
+        if settled > 0:
+            lines.append(f"Win rate:       {won/settled*100:.1f}%  ({won}–{rm.get('lost') or 0}, {settled} settled)")
+        if rm.get("open"):
+            lines.append(f"Open bets:      {rm['open']}")
+        clv_r = rm.get("avg_clv")
+        if clv_r is not None:
+            lines.append(f"CLV average:    {clv_r:+.3f}")
+
     # Per-book account balances + low-balance warnings.
     try:
         import book_balance

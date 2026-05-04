@@ -1704,6 +1704,92 @@ async def admin_accuracy_history(league: str | None = None, limit: int = Query(5
 
 # --- World Cup calibration (separate from regular leagues) -------------------
 
+@app.get("/admin/real-trade-audit", dependencies=[Depends(admin_auth)])
+async def admin_real_trade_audit():
+    """Spec 1.7 — per-cash-bet audit (paper counterpart, odds/stake deltas,
+    quality chip). Refreshed nightly by the scheduler; this endpoint also
+    triggers a fresh refresh so the admin page always shows current data.
+    """
+    import real_trade_audit
+    summary = real_trade_audit.refresh_all()
+    return {"summary": summary, "rows": real_trade_audit.report()}
+
+
+@app.get("/admin/wc/go-no-go", dependencies=[Depends(admin_auth)])
+async def admin_wc_go_no_go():
+    """Spec 1.8 — June 11 go/no-go gate. Combines real-money performance
+    (P&L positive, paper-vs-real gap below 10%) with the existing
+    readiness signals. Each criterion is GREEN/AMBER/RED and the overall
+    status is the worst of the parts."""
+    import real_trade_audit
+    # Force a refresh first so we're not reading stale audit data.
+    real_trade_audit.refresh_all()
+    with db() as conn:
+        cash = conn.execute(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN status IN ('won','lost') THEN profit ELSE 0 END), 0) AS pnl,
+              COALESCE(SUM(CASE WHEN status='won'  THEN 1 ELSE 0 END), 0) AS won,
+              COALESCE(SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END), 0) AS lost
+            FROM bets_placed WHERE is_paper = 0
+            """
+        ).fetchone()
+        paper = conn.execute(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN status='won'  THEN 1 ELSE 0 END), 0) AS won,
+              COALESCE(SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END), 0) AS lost
+            FROM bets_placed WHERE is_paper = 1 AND status IN ('won','lost')
+            """
+        ).fetchone()
+
+    cash_settled = (cash["won"] or 0) + (cash["lost"] or 0)
+    cash_winrate = (cash["won"] / cash_settled) if cash_settled > 0 else None
+    paper_settled = (paper["won"] or 0) + (paper["lost"] or 0)
+    paper_winrate = (paper["won"] / paper_settled) if paper_settled > 0 else None
+    pnl = float(cash["pnl"] or 0)
+
+    # Criterion 1 — real P&L positive
+    pnl_status = (
+        "GREEN" if pnl > 0
+        else "AMBER" if cash_settled < 5  # too few bets to call
+        else "RED"
+    )
+    # Criterion 2 — execution gap (paper win-rate vs real win-rate) below 10pp
+    if cash_winrate is None or paper_winrate is None:
+        gap = None
+        gap_status = "AMBER"
+    else:
+        gap = paper_winrate - cash_winrate
+        gap_status = (
+            "GREEN" if abs(gap) < 0.10
+            else "AMBER" if abs(gap) < 0.15
+            else "RED"
+        )
+
+    # Overall = worst of the parts. RED > AMBER > GREEN.
+    rank = {"GREEN": 0, "AMBER": 1, "RED": 2}
+    parts = [pnl_status, gap_status]
+    overall = max(parts, key=lambda s: rank[s])
+
+    return {
+        "overall": overall,
+        "criteria": {
+            "real_pnl_positive": {
+                "status": pnl_status,
+                "pnl": round(pnl, 2),
+                "settled": cash_settled,
+            },
+            "paper_vs_real_gap_below_10pp": {
+                "status": gap_status,
+                "gap_pp": round(gap * 100, 1) if gap is not None else None,
+                "cash_winrate":  round(cash_winrate, 4) if cash_winrate is not None else None,
+                "paper_winrate": round(paper_winrate, 4) if paper_winrate is not None else None,
+            },
+        },
+    }
+
+
 @app.get("/admin/wc/status", dependencies=[Depends(admin_auth)])
 async def admin_wc_status():
     """Tournament phase + settled count + which step to fire next."""

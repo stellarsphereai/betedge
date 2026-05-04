@@ -198,6 +198,24 @@ CREATE TABLE IF NOT EXISTS book_balance (
 -- season-to-date stats we already pull during data_sync. Activated by the
 -- OPPONENT_ADJUSTED_XG env flag — table populates regardless so we can
 -- backtest before flipping the switch.
+-- Real-trade audit (spec 1.7) — for each cash bet, capture whether a
+-- paper counterpart existed, how the executed odds and stake compared
+-- to that counterpart, and an overall "execution quality" score.
+-- Refreshed nightly via a scheduler job so the morning digest + admin
+-- page reflect today's audit.
+CREATE TABLE IF NOT EXISTS real_trade_audit (
+    bet_id INTEGER PRIMARY KEY,         -- 1:1 with bets_placed.id
+    paper_bet_id INTEGER,               -- matching paper bet, if found
+    odds_diff REAL,                     -- real_odds - paper_odds
+    stake_diff REAL,                    -- real_stake - paper_kelly_stake
+    odds_flag INTEGER NOT NULL DEFAULT 0,   -- 1 if |odds_diff| > 0.10
+    stake_flag INTEGER NOT NULL DEFAULT 0,  -- 1 if |stake_diff| > 5
+    no_paper_flag INTEGER NOT NULL DEFAULT 0,
+    quality TEXT,                       -- 'green' / 'amber' / 'red'
+    notes TEXT,
+    last_audited TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS team_ratings (
     team_id INTEGER NOT NULL,
     league_id INTEGER NOT NULL,

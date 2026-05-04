@@ -219,6 +219,20 @@ async def job_auto_settle_open_bets():
     }
 
 
+async def job_real_trade_audit():
+    """02:45 NY-local — refresh the real_trade_audit table after the 02:30
+    auto-settle pass. Spec 1.7: per-cash-bet comparison against paper
+    counterpart (odds delta, stake delta, missing counterpart). Cheap
+    SQL-only pass; no external API calls."""
+    log.info("scheduler: 02:45 real-trade audit refresh")
+    try:
+        import real_trade_audit
+        return real_trade_audit.refresh_all()
+    except Exception:
+        log.exception("scheduler: real-trade audit crashed")
+        return None
+
+
 async def job_closing_lines_and_pnl():
     """23:55 NY: sweep closing lines, snapshot P&L, then run the self-eval
     pipeline (result logging + 5 bias checks per league). Each step wrapped so
@@ -356,6 +370,7 @@ _JOB_LABELS = {
     "daily_status_email":   "Daily cron status email",
     "activate_fix_b":       "Activate Fix B (opponent-adjusted xG)",
     "auto_settle":          "Auto-settle open bets",
+    "real_trade_audit":     "Real-trade audit refresh",
 }
 
 
@@ -449,6 +464,7 @@ def build() -> AsyncIOScheduler:
         ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
         ("sync_world_cup",   _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
+        ("real_trade_audit",      job_real_trade_audit,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_digest",        job_morning_digest,            CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("closing_and_pnl",       job_closing_lines_and_pnl,     CronTrigger(hour=23, minute=55, timezone=TIMEZONE)),
