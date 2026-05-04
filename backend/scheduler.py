@@ -311,10 +311,23 @@ async def job_morning_report():
     today = datetime.now(timezone.utc).date()
     days_to_kickoff = (datetime(2026, 6, 11).date() - today).days
 
-    # Roll up readiness from the most recent task run
+    # Roll up readiness from the most recent task run. The task always
+    # returns status=PASS (the task itself ran fine); the GREEN/AMBER/RED
+    # health flag is parsed from the summary string ("8/29 (27.6%) · RED · 38 days").
     readiness = next((r for r in reversed(runs) if r["task_name"] == "readiness_score"), None)
-    pct = readiness and readiness.get("result_summary", "").split("(")[1].split("%")[0] if readiness else "?"
-    flag = readiness and readiness.get("status") or "?"
+    pct = "?"
+    flag = "?"
+    if readiness and readiness.get("result_summary"):
+        s = readiness["result_summary"]
+        if "(" in s and "%" in s:
+            try:
+                pct = s.split("(")[1].split("%")[0]
+            except Exception:
+                pass
+        for tag in ("GREEN", "AMBER", "RED"):
+            if tag in s:
+                flag = tag
+                break
 
     body_lines = []
     body_lines.append("=== OVERNIGHT COMPLETIONS ===")
