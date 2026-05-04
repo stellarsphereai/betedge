@@ -318,12 +318,14 @@ def _dedup_key(r: "Anomaly") -> str:
 
 
 def log_many(rows: Iterable[Anomaly]) -> int:
-    """Append rows to anomaly_log. Returns the number ACTUALLY written
-    (skips no-ops from the (match,outcome,type,day) UNIQUE dedup index).
+    """Append rows to anomaly_log. Returns the number of writes performed
+    (inserts + value-refreshing updates).
 
-    Same anomaly on the same match × outcome × day fires once per day. The
-    bet pipeline runs once per book × per scheduled re-run (~10× per day),
-    so without this we were stacking ~70-100 rows per real anomaly.
+    Same anomaly on the same match × outcome × day fires once per day, but
+    when it re-fires we UPSERT — overwriting model_prob / book_implied /
+    edge / description with the latest values. Without the upsert path,
+    a stale entry from an earlier (pre-deploy / pre-resync) run stays in
+    the log forever and the AI Analysis ingests the stale numbers.
     """
     rows = list(rows)
     if not rows:
@@ -333,10 +335,15 @@ def log_many(rows: Iterable[Anomaly]) -> int:
         for r in rows:
             cur = conn.execute(
                 """
-                INSERT OR IGNORE INTO anomaly_log
+                INSERT INTO anomaly_log
                   (match_id, home_team, away_team, anomaly_type, description,
                    edge_shown, model_prob, book_implied, dedup_key)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(dedup_key) DO UPDATE SET
+                  description  = excluded.description,
+                  edge_shown   = excluded.edge_shown,
+                  model_prob   = excluded.model_prob,
+                  book_implied = excluded.book_implied
                 """,
                 (r.match_id, r.home_team, r.away_team, r.anomaly_type, r.description,
                  r.edge_shown, r.model_prob, r.book_implied, _dedup_key(r)),
