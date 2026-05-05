@@ -26,22 +26,24 @@ import wc_qualified_teams as W
 
 log = logging.getLogger("arb.qualifier_corpus")
 
-# (league_id, season) tuples covering all 2026 WC qualifying campaigns.
-# Seasons confirmed against API-Football /leagues?search=Qualification.
+# (league_id, season, label) — seasons confirmed against /leagues?id=X.
+# WC 2026 qualifying spans 2023-2025 even though API-Football labels the
+# season "2026" for most confederations. Date range below is wide enough
+# to cover every campaign.
 QUALIFIER_LEAGUES: list[tuple[int, int, str]] = [
-    # (league_id, season, label)
-    (32, 2024, "UEFA"),
-    (34, 2024, "CONMEBOL"),
-    (34, 2026, "CONMEBOL (final round)"),
-    (30, 2024, "AFC"),
-    (30, 2026, "AFC (final rounds)"),
-    (29, 2023, "CAF"),
-    (29, 2025, "CAF (later rounds)"),
-    (31, 2024, "CONCACAF"),
-    (31, 2026, "CONCACAF (final round)"),
-    (33, 2026, "OFC"),
-    (37, 2026, "Inter-confederation playoffs"),
+    (32, 2024, "UEFA"),                       # 2025-03-21 → 2026-03-31
+    (34, 2026, "CONMEBOL"),                   # 2023-09-07 → 2025-09-09
+    (30, 2026, "AFC"),                        # 2023-10-12 → 2025-11-18
+    (29, 2023, "CAF"),                        # 2023-11-15 → 2025-11-16
+    (31, 2026, "CONCACAF"),                   # 2024-03-22 → 2025-11-19
+    (33, 2026, "OFC"),                        # 2024-09-05 → 2025-03-24
+    (37, 2026, "Inter-confederation playoffs"),  # 2026-03-26 → 2026-03-31
 ]
+
+# Wide window that covers every WC 2026 qualifying campaign regardless
+# of which confederation's season label API-Football uses.
+QUALIFIER_FROM_DATE = "2023-01-01"
+QUALIFIER_TO_DATE   = "2026-06-30"
 
 
 def _normalize(name: str) -> str:
@@ -78,7 +80,7 @@ async def load_qualifier_fixtures(client: httpx.AsyncClient) -> list[dict]:
         try:
             fixtures = await api_football.fixtures_by_date_range(
                 client, league=league_id, season=season,
-                from_date=f"{season}-01-01", to_date=f"{season+1}-12-31",
+                from_date=QUALIFIER_FROM_DATE, to_date=QUALIFIER_TO_DATE,
             )
         except Exception as e:
             log.warning("qualifier_corpus: %s (league=%d season=%d) fetch failed: %s",

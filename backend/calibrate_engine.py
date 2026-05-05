@@ -48,6 +48,7 @@ def _evaluate_params(
     stats_cache: dict[int, list[dict]],
     params: model.ModelParams,
     league_id: int | None = None,
+    min_priors: int | None = None,
 ) -> dict | None:
     """Run model.predict() with `params` against every test fixture; return
     aggregate Brier and winner-accuracy. None if no fixture had enough prior
@@ -63,7 +64,8 @@ def _evaluate_params(
             continue
         h_xf, h_xa = backtest_ucl._team_recent_xg(h["id"], d, fixtures_all, stats_cache)
         a_xf, a_xa = backtest_ucl._team_recent_xg(a["id"], d, fixtures_all, stats_cache)
-        if len(h_xf) < backtest_ucl.MIN_PRIOR_MATCHES or len(a_xf) < backtest_ucl.MIN_PRIOR_MATCHES:
+        threshold = min_priors if min_priors is not None else backtest_ucl.MIN_PRIOR_MATCHES
+        if len(h_xf) < threshold or len(a_xf) < threshold:
             continue
         h_szn_for, h_szn_against = backtest_ucl._season_to_date_avg(h["id"], d, fixtures_all, stats_cache)
         a_szn_for, a_szn_against = backtest_ucl._season_to_date_avg(a["id"], d, fixtures_all, stats_cache)
@@ -178,11 +180,18 @@ async def grid_search_qualifier_corpus(
         len(test_fixtures), len(rho_grid), len(ko_grid),
     )
 
-    baseline = _evaluate_params(test_fixtures, fixtures, stats_cache, model.DEFAULT_PARAMS)
+    # International football has ~6-10 fixtures per team per year (vs 50+
+    # for club football), so the default MIN_PRIOR_MATCHES=3 wipes out most
+    # of the corpus. Drop to 2 — keeps the prior window meaningful but
+    # admits ~3× more test fixtures.
+    QUAL_MIN_PRIORS = 2
+    baseline = _evaluate_params(test_fixtures, fixtures, stats_cache,
+                                 model.DEFAULT_PARAMS, min_priors=QUAL_MIN_PRIORS)
     results: list[dict] = []
     for rho, ko in product(rho_grid, ko_grid):
         params = model.ModelParams(rho=rho, ko_draw_damping=ko)
-        score = _evaluate_params(test_fixtures, fixtures, stats_cache, params)
+        score = _evaluate_params(test_fixtures, fixtures, stats_cache,
+                                  params, min_priors=QUAL_MIN_PRIORS)
         if score is None:
             continue
         results.append({"params": {"rho": rho, "ko_draw_damping": ko}, **score})
