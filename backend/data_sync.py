@@ -91,6 +91,10 @@ _GROUP_ROUND_TOKENS = ("Group Stage", "League Phase")
 _GROUP_STAGE_DISCOUNT = 0.70   # downweight group-stage xG when blending
 
 
+# Knockout-round token detection is shared across UCL, UEL, and WC since
+# all three use the same labels ("Round of 16", "Quarter-finals", etc.)
+# at the API-Football layer. Functions retain the historic _ucl_ prefix
+# for backwards compatibility with imports elsewhere in the file.
 def _is_ucl_knockout_round(round_label: str | None) -> bool:
     if not round_label:
         return False
@@ -397,19 +401,25 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
         for fx in fixtures:
             home_id = fx["teams"]["home"]["id"]
             away_id = fx["teams"]["away"]["id"]
-            # For UCL knockout fixtures, restrict each team's xG window to
-            # knockout-stage games only (or fall back to a group-stage-
-            # discounted blend if <3 KO games available).
+            # Tournament-knockout filter: for UCL / UEL / WC knockout
+            # fixtures, restrict each team's xG window to knockout-stage
+            # games only (or fall back to a group-stage-discounted blend
+            # if <3 KO games available). Group-stage matches where strong
+            # teams blow out minnows produce inflated xG that doesn't
+            # transfer to knockout opposition.
             this_round = fx.get("league", {}).get("round") or ""
-            is_ucl_knockout = league == "ucl" and _is_knockout(this_round)
+            is_tournament_knockout = (
+                league in ("ucl", "uel", "world_cup")
+                and _is_knockout(this_round)
+            )
             home_xg_for, home_xg_against, home_xg_info = _team_xg_history(
                 home_id, team_recent.get(home_id, []), stats_cache,
-                knockout_only_for_ucl=is_ucl_knockout,
+                knockout_only_for_ucl=is_tournament_knockout,
                 opponent_ratings=ratings_snapshot,
             )
             away_xg_for, away_xg_against, away_xg_info = _team_xg_history(
                 away_id, team_recent.get(away_id, []), stats_cache,
-                knockout_only_for_ucl=is_ucl_knockout,
+                knockout_only_for_ucl=is_tournament_knockout,
                 opponent_ratings=ratings_snapshot,
             )
             if len(home_xg_for) < 3 or len(away_xg_for) < 3:
@@ -419,17 +429,16 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             kickoff_iso = fx["fixture"]["date"]
             h_season_for, h_season_against = season_avg.get(home_id, (None, None))
             a_season_for, a_season_against = season_avg.get(away_id, (None, None))
-            # Fix A part 2: for UCL knockout matches, the API-Football
-            # season aggregate is dominated by group-stage results (top
-            # clubs ran up scores against weaker opponents — Arsenal's
-            # season xG_for=2.2 vs knockout-only mean of 1.36). The
-            # 30/70 recent/season blend below would then pull the
-            # prediction back into "group-stage Arsenal" territory.
-            # Override the season component to the same knockout-only
-            # xG history we already filtered for the recent window —
-            # the team's full body of knockout work IS the right
-            # baseline for a knockout match.
-            if is_ucl_knockout:
+            # Fix A part 2 (now also covers UEL + WC knockouts): for any
+            # tournament knockout match, the season aggregate is dominated
+            # by group-stage results where elite teams ran up scores
+            # against weaker opponents. The 30/70 recent/season blend
+            # below would otherwise pull the prediction back into
+            # "group-stage" territory. Override the season component to
+            # the same knockout-only xG history we already filtered for
+            # the recent window — the team's full body of knockout work
+            # IS the right baseline for a knockout match.
+            if is_tournament_knockout:
                 if home_xg_for and home_xg_against:
                     h_season_for     = sum(home_xg_for) / len(home_xg_for)
                     h_season_against = sum(home_xg_against) / len(home_xg_against)
@@ -469,7 +478,7 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             # tighter and books prior-weight that. Lean more on the season
             # average (0.30 recent, 0.70 season) for these matches.
             match_params = model_params
-            if knockout and league in ("ucl", "uel"):
+            if knockout and league in ("ucl", "uel", "world_cup"):
                 match_params = dataclasses.replace(match_params, season_blend=0.30)
             # EPL late-season tightening — by gameweek 30+ the 10-game window
             # captures roughly current shape, but the season baseline still
@@ -492,7 +501,7 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             # the input data is structurally weaker — force LOW confidence
             # so downstream consumers (Top 3, digest, recommendations)
             # weight the prediction less.
-            if is_ucl_knockout and (home_xg_info["fallback_used"] or away_xg_info["fallback_used"]):
+            if is_tournament_knockout and (home_xg_info["fallback_used"] or away_xg_info["fallback_used"]):
                 prediction.confidence = "LOW"
 
             match_id = f"af-{fx['fixture']['id']}"
