@@ -149,8 +149,15 @@ async def grid_search_ucl_knockouts(rho_grid: tuple[float, ...] = RHO_GRID,
     }
 
 
+# Extended grid for the qualifier corpus — international football tends
+# toward more draws than independent-Poisson predicts, so negative rho is
+# preferred. The first qualifier run pinned rho=-0.20 at the boundary of
+# the standard RHO_GRID, so we widen to capture the actual optimum.
+QUALIFIER_RHO_GRID = (-0.40, -0.35, -0.30, -0.25, -0.20, -0.15, -0.10, -0.05, 0.0, 0.05)
+
+
 async def grid_search_qualifier_corpus(
-    rho_grid: tuple[float, ...] = RHO_GRID,
+    rho_grid: tuple[float, ...] = QUALIFIER_RHO_GRID,
     ko_grid: tuple[float, ...] = KO_DAMPING_GRID,
 ) -> dict:
     """Walk RHO × KO_DAMPING against the WC qualifier corpus (matches
