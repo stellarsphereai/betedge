@@ -1863,6 +1863,34 @@ async def admin_wc_snapshot():
     return {"snapshot": payload, "email": email}
 
 
+@app.post("/admin/wc/calibrate-from-qualifiers", dependencies=[Depends(admin_auth)])
+async def admin_wc_calibrate_qualifiers(apply: bool = False):
+    """Pre-tournament calibration using WC 2026 qualifier matches as the
+    corpus. Filters to fixtures involving any of the 48 qualified-pool teams.
+    apply=false (default): grid-search and return ranked results — no persist.
+    apply=true: persist the lowest-Brier params to model_params_wc.json.
+    """
+    import calibrate_engine
+    result = await calibrate_engine.grid_search_qualifier_corpus()
+    if not result.get("ok"):
+        return result
+    if apply and result.get("improvement_brier", 0) > 0:
+        best = result["best"]["params"]
+        new_params = model.ModelParams(
+            rho=best["rho"], ko_draw_damping=best["ko_draw_damping"],
+        )
+        save = calibrate_engine.save_league_params("wc", new_params, source={
+            "corpus": "wc_qualifier_pool",
+            "n_test_fixtures": result["n_test_fixtures"],
+            "n_corpus_fixtures": result["n_corpus_fixtures"],
+            "baseline_brier": result["baseline"]["avg_brier"],
+            "calibrated_brier": result["best"]["avg_brier"],
+            "improvement": result["improvement_brier"],
+        })
+        result["saved"] = save
+    return result
+
+
 @app.post("/admin/wc/calibrate-from-ucl-proxy", dependencies=[Depends(admin_auth)])
 async def admin_wc_calibrate_proxy(apply: bool = False):
     """Pre-tournament one-time calibration using UCL knockouts as a proxy.

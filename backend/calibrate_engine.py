@@ -147,6 +147,65 @@ async def grid_search_ucl_knockouts(rho_grid: tuple[float, ...] = RHO_GRID,
     }
 
 
+async def grid_search_qualifier_corpus(
+    rho_grid: tuple[float, ...] = RHO_GRID,
+    ko_grid: tuple[float, ...] = KO_DAMPING_GRID,
+) -> dict:
+    """Walk RHO × KO_DAMPING against the WC qualifier corpus (matches
+    involving any of the 48 qualified-pool teams). Reuses the same
+    _evaluate_params() loop as the UCL-knockout version — only the corpus
+    differs.
+
+    Marks each test fixture with knockout=False since qualifier league
+    matches mostly have flat round structure (group stages dominate);
+    knockout-only inter-conf playoffs are a small subset and treated the
+    same as group games for grid simplicity.
+    """
+    import qualifier_corpus
+    log.info("calibrate: loading qualifier corpus...")
+    fixtures, stats_cache = await qualifier_corpus.load_full_corpus()
+    if not fixtures:
+        return {"ok": False, "reason": "no qualifier fixtures fetched"}
+
+    # We test on every fixture in the corpus that has a settled outcome.
+    # _evaluate_params will skip ones without enough prior data automatically.
+    test_fixtures = [
+        fx for fx in fixtures
+        if backtest_ucl._outcome(fx) is not None
+    ]
+    log.info(
+        "calibrate: qualifier grid over %d test fixtures × %d×%d params",
+        len(test_fixtures), len(rho_grid), len(ko_grid),
+    )
+
+    baseline = _evaluate_params(test_fixtures, fixtures, stats_cache, model.DEFAULT_PARAMS)
+    results: list[dict] = []
+    for rho, ko in product(rho_grid, ko_grid):
+        params = model.ModelParams(rho=rho, ko_draw_damping=ko)
+        score = _evaluate_params(test_fixtures, fixtures, stats_cache, params)
+        if score is None:
+            continue
+        results.append({"params": {"rho": rho, "ko_draw_damping": ko}, **score})
+
+    if not results:
+        return {"ok": False, "reason": "no scorable fixtures"}
+
+    results.sort(key=lambda r: r["avg_brier"])
+    best = results[0]
+    return {
+        "ok": True,
+        "corpus": "wc_qualifier_pool",
+        "n_combinations": len(results),
+        "n_test_fixtures": baseline["n"] if baseline else 0,
+        "n_corpus_fixtures": len(fixtures),
+        "baseline": baseline,
+        "best": best,
+        "improvement_brier": round(baseline["avg_brier"] - best["avg_brier"], 4) if baseline else None,
+        "top_5": results[:5],
+        "all_results": results,
+    }
+
+
 def save_league_params(league_key: str, params: model.ModelParams, source: dict) -> dict:
     """Persist tuned params to model_params_<league>.json. The `source` dict
     rides along for provenance (which corpus, which Brier improvement, etc.)."""
