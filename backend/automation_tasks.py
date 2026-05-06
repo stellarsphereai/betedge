@@ -56,6 +56,18 @@ async def task_model_validation() -> dict:
             "summary": "no settled predictions yet — model_validation re-arms when first fixture closes",
             "n_predictions": 0,
         }
+    # Sample-size gate — under 20 settled predictions the accuracy/Brier
+    # estimates are dominated by sample variance (one missed call swings
+    # win_rate by 5-8pp). DEFERRED instead of FAIL so the 6am
+    # consec-failure watchdog doesn't escalate while we're still in
+    # early-data territory. Threshold check resumes once n ≥ 20.
+    MIN_N_FOR_VALIDATION = 20
+    if n < MIN_N_FOR_VALIDATION:
+        return {
+            "status": "DEFERRED",
+            "summary": f"only {n} settled predictions (need ≥{MIN_N_FOR_VALIDATION} for stable thresholds — re-arms automatically)",
+            "n_predictions": n,
+        }
     win_rate = float(rep.get("win_rate") or 0)
     brier = float(rep.get("avg_brier") or 0)
     clv = rep.get("avg_clv")
@@ -281,6 +293,20 @@ async def task_real_money_performance() -> dict:
         return {
             "status": "DEFERRED",
             "summary": "no settled cash bets yet — real-money performance check re-arms once one closes",
+        }
+    # Sample-size gate — under 30 settled cash bets the win-rate /
+    # execution-gap signals are statistically unreliable (one cold streak
+    # of 4 losses swings win_rate by 13pp on n=10, only 7pp on n=30).
+    # DEFERRED keeps the 6am watchdog quiet during early ramp-up; the
+    # morning report still surfaces the numbers via the digest's
+    # REAL MONEY STATUS section so the data is visible — just no
+    # URGENT escalation until the sample stabilizes.
+    MIN_N_FOR_REAL_PERF = 30
+    if (cash["settled"] or 0) < MIN_N_FOR_REAL_PERF:
+        return {
+            "status": "DEFERRED",
+            "summary": f"only {cash['settled']} settled cash bets (need ≥{MIN_N_FOR_REAL_PERF} for stable thresholds — re-arms automatically)",
+            "settled": int(cash["settled"] or 0),
         }
     settled = cash["settled"]; won = cash["won"]; lost = cash["lost"]
     pnl = float(cash["pnl"] or 0)
