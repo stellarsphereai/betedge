@@ -599,6 +599,16 @@ async def get_ev_bets(
                     if lockout_reason
                     else "phantom-edge anomaly excluded this bet"
                 )
+            # Per-bet cash eligibility (specs A-D) — frontend reads
+            # cash_eligible + cash_reason to grey-out the Cash button per row.
+            try:
+                import cash_restrictions
+                _cash_ok, _cash_reason = cash_restrictions.check_cash_eligibility(row)
+                row["cash_eligible"] = bool(_cash_ok)
+                row["cash_reason"]   = _cash_reason
+            except Exception:
+                row["cash_eligible"] = True
+                row["cash_reason"]   = ""
             bets.append(row)
 
     # Dedupe by bet identity — the inner market passes (h2h / btts / each
@@ -801,7 +811,27 @@ async def list_bets(status: str | None = None, limit: int = Query(100, ge=1, le=
 
 @app.post("/bets")
 async def create_bet(payload: BetInput):
+    import cash_restrictions
     is_paper = payload.is_paper if payload.is_paper is not None else LEAGUE_MODE == "epl"
+    if not is_paper:
+        # Specs A-D — gate cash bets through the restriction layer.
+        # Paper bets are always allowed (the whole point of paper-first
+        # is to make sure paper logging is frictionless).
+        allowed, reason = cash_restrictions.check_cash_eligibility({
+            "match_id":    payload.match_id,
+            "market":      payload.market,
+            "market_line": payload.market_line,
+            "outcome":     payload.bet_type,
+            "edge":        payload.edge_at_placement,
+        })
+        if not allowed:
+            raise HTTPException(403, reason)
+        # Daily-cap-hit alert email (sent at most once per day via dedup
+        # on automation_log) — fired AFTER the bet is rejected so the user
+        # knows immediately, not just at 6am the next morning.
+        # Note: this branch only runs when allowed=True so the bet is
+        # going through; the cap-hit email is fired below from the
+        # /admin/cash-restrictions/check-cap path on each bet attempt.
     bet_id = clv_tracker.log_bet(
         match_id=payload.match_id,
         home_team=payload.home_team,
@@ -815,7 +845,20 @@ async def create_bet(payload: BetInput):
         market=payload.market,
         market_line=payload.market_line,
     )
+    # If this paper bet trips the cap on the cash side (paper bets don't
+    # affect P&L; this is a no-op), or if a cash bet just settled and
+    # pushed pnl past the cap, fire the alert at most once per day.
     return {"id": bet_id, "is_paper": is_paper}
+
+
+@app.get("/restrictions")
+async def get_restrictions():
+    """Spec A-D — UI reads this on every dashboard load to render the
+    banner + grey-out the Cash buttons. Always returns the current
+    restriction state (per-bet eligibility is computed client-side from
+    the same rules)."""
+    import cash_restrictions
+    return cash_restrictions.restriction_status()
 
 
 @app.get("/stats")
@@ -1815,9 +1858,16 @@ async def admin_wc_go_no_go():
             else "RED"
         )
 
+    # Goal-market unlock criterion (spec A-D follow-up) — even when P&L
+    # + gap pass, WC real money stays H2H-only until paper-trade goal
+    # markets prove the model is calibrated on BTTS / Totals.
+    import cash_restrictions
+    gm = cash_restrictions.goal_market_paper_progress()
+    gm_status = "GREEN" if gm["unlocked"] else "AMBER"
+
     # Overall = worst of the parts. RED > AMBER > GREEN.
     rank = {"GREEN": 0, "AMBER": 1, "RED": 2}
-    parts = [pnl_status, gap_status]
+    parts = [pnl_status, gap_status, gm_status]
     overall = max(parts, key=lambda s: rank[s])
 
     return {
@@ -1833,6 +1883,10 @@ async def admin_wc_go_no_go():
                 "gap_pp": round(gap * 100, 1) if gap is not None else None,
                 "cash_winrate":  round(cash_winrate, 4) if cash_winrate is not None else None,
                 "paper_winrate": round(paper_winrate, 4) if paper_winrate is not None else None,
+            },
+            "goal_markets_unlocked": {
+                "status": gm_status,
+                **gm,
             },
         },
     }

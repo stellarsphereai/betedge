@@ -445,6 +445,15 @@ def mark_match_result(
     for book_name, profit, is_paper in balance_updates:
         book_balance.apply_settled_bet(book_name, profit, is_paper=is_paper)
 
+    # Spec C — fire the daily-loss-cap alert email if a cash bet just
+    # pushed today's P&L past -$50. Paper-only settlement runs harmlessly
+    # through this path; the cap check itself only counts cash bets.
+    try:
+        import cash_restrictions
+        cash_restrictions.maybe_send_daily_cap_alert()
+    except Exception:
+        pass  # never let the alert break settlement
+
     return {
         "match_id": match_id, "result": result,
         "home_goals": home_goals, "away_goals": away_goals,

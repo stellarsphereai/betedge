@@ -175,6 +175,37 @@ def render(
     mode_label = "WORLD CUP LIVE" if league_mode == "world_cup" else "EPL PAPER TRADE"
     lines.append(f"Mode: {mode_label}")
 
+    # Cash restriction state — render BEFORE the rollup so the user sees
+    # the rules first, then the numbers. Always rendered (even pre-cash)
+    # because the restrictions exist regardless of whether bets are placed.
+    try:
+        import cash_restrictions
+        rs = cash_restrictions.restriction_status()
+        gm = rs["goal_market_progress"]
+        lines.append("")
+        lines.append("=== REAL MONEY RESTRICTIONS ===")
+        lines.append("Active restrictions:")
+        lines.append("  - Goal markets (BTTS / Totals): paper only")
+        lines.append("  - H2H Draw: paper only")
+        lines.append(f"  - Min cash edge: {rs['min_cash_edge']*100:.0f}%")
+        lines.append(f"  - Daily cash loss cap: ${rs['daily_loss_cap_usd']:.0f}")
+        lines.append(f"  - Paper trade required first on every cash bet")
+        if rs["daily_cap_hit"]:
+            lines.append("")
+            lines.append(f"  ⚠️ DAILY CAP HIT today (${rs['todays_cash_pnl']:+.0f}) — cash betting locked")
+        lines.append("")
+        lines.append("Goal markets unlock when paper trades show:")
+        wr = gm["win_rate"]
+        wr_str = f"{wr*100:.0f}%" if wr is not None else "n/a"
+        clv_str = f"{gm['avg_clv']:+.3f}" if gm["avg_clv"] is not None else "n/a"
+        lines.append(f"  - {gm['settled']}/{gm['target_settled']} settled  (need ≥{gm['target_settled']})")
+        lines.append(f"  - Win rate {wr_str}  (need ≥{int(gm['target_win_rate']*100)}%)")
+        lines.append(f"  - Avg CLV {clv_str}  (need ≥0)")
+        unlock = "🔓 UNLOCKED" if gm["unlocked"] else "🔒 Still locked"
+        lines.append(f"  Status: {unlock}")
+    except Exception:
+        pass
+
     # Real money rollup — only render when at least one cash bet has been
     # logged. During the paper-only phase this section is silent so the
     # digest doesn't pad with empty zeroes.
