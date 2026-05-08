@@ -359,18 +359,31 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                             >
                               <Plus size={10} /> Paper
                             </button>
-                            <button
-                              onClick={() => startConfirmReal(b)}
-                              disabled={blocked}
-                              title={blocked ? reason : `Log CASH (real-money) bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${
-                                blocked
-                                  ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
-                                  : 'bg-warn-soft border-warn/40 text-warn hover:bg-warn hover:text-ink-950'
-                              }`}
-                            >
-                              <DollarSign size={10} /> Cash
-                            </button>
+                            {(() => {
+                              // Specs A-D — cash button is greyed when the
+                              // backend's cash_eligible=false. The reason
+                              // string lands in the tooltip so the user
+                              // can see WHY (goal market locked, edge < 6%,
+                              // no paper counterpart, daily cap hit).
+                              const cashBlocked = blocked || b.cash_eligible === false
+                              const cashReason = blocked
+                                ? reason
+                                : (b.cash_reason || `Log CASH (real-money) bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`)
+                              return (
+                                <button
+                                  onClick={() => !cashBlocked && startConfirmReal(b)}
+                                  disabled={cashBlocked}
+                                  title={cashReason}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${
+                                    cashBlocked
+                                      ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
+                                      : 'bg-warn-soft border-warn/40 text-warn hover:bg-warn hover:text-ink-950'
+                                  }`}
+                                >
+                                  <DollarSign size={10} /> Cash
+                                </button>
+                              )
+                            })()}
                           </span>
                         )
                       })()}

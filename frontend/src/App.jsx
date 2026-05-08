@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Header from './components/Header'
 import BookBalanceStrip from './components/BookBalanceStrip'
+import RestrictionsBanner from './components/RestrictionsBanner'
 import BestBetsGrid from './components/BestBetsGrid'
 import StatsRow from './components/StatsRow'
 import FilterTabs from './components/FilterTabs'
@@ -36,6 +37,7 @@ export default function App() {
   const [bets, setBets] = useState([])
   const [anomalies, setAnomalies] = useState(null)
   const [modelHealth, setModelHealth] = useState(null)
+  const [restrictions, setRestrictions] = useState(null)
   const [timeseries, setTimeseries] = useState(null)
   const [backtest, setBacktest] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -48,7 +50,7 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [s, e, p, b, ts, bt, an, mh] = await Promise.all([
+      const [s, e, p, b, ts, bt, an, mh, rs] = await Promise.all([
         api.stats(),
         api.evBets(1000, 0.03, leagueRef.current, { force }),
         api.predictions(50),
@@ -57,9 +59,11 @@ export default function App() {
         api.backtestResult().catch(() => null),
         api.anomalies(200).catch(() => ({ count_today: 0, anomalies: [] })),
         api.modelHealth(leagueRef.current).catch(() => null),
+        fetch('/restrictions').then(r => r.ok ? r.json() : null).catch(() => null),
       ])
       setStats(s); setEv(e); setPredictions(p.predictions || []); setBets(b.bets || [])
       setTimeseries(ts); setBacktest(bt); setAnomalies(an); setModelHealth(mh)
+      setRestrictions(rs)
       setLastFetched(new Date())
     } catch (err) {
       setError(err.message || String(err))
@@ -244,6 +248,8 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
       />
+
+      <RestrictionsBanner restrictions={restrictions} />
 
       <BookBalanceStrip refreshKey={lastFetched?.getTime?.()} />
 
