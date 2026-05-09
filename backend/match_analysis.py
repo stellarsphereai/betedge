@@ -259,32 +259,39 @@ def _build_user_prompt(
             pass
 
     if anomalies:
-        # Filter to anomalies whose (model_prob, book_implied) pair matches a
-        # visible bet in the BETS block — anomalies on PHANTOM_EDGE-excluded
-        # or otherwise-filtered bets are misleading because the AI can't see
-        # the underlying bet and tries to attribute the anomaly to the wrong
-        # market. Match on rounded prob pair (0.001 precision is enough to
-        # disambiguate home/draw/away/over/under/yes/no inside one match).
-        visible_keys = set()
-        for b in (ev_bets or []):
-            mp = b.get("model_prob")
-            tp = b.get("true_implied_prob")
-            if mp is not None and tp is not None:
-                visible_keys.add((round(mp, 3), round(tp, 3)))
-        # Match anomaly model_prob against visible bets' model_prob; book_implied
-        # is the consensus average rather than per-book so we match on model
-        # prob alone (high precision is enough since each bet has a distinct
-        # model_prob within one match).
-        visible_model_probs = {round(b.get("model_prob"), 3) for b in (ev_bets or []) if b.get("model_prob") is not None}
+        # Two anomaly classes need different rendering:
+        #   per-BET    (MARKET_CONSENSUS_DIVERGENCE, SHARP_DIVERGE, EDGE_HIGH,
+        #               PHANTOM_EDGE) — have model_prob/book_implied/edge_shown
+        #               numbers attached to a specific outcome. Filter to ones
+        #               whose model_prob matches a visible BETS-block row;
+        #               render as "model=X% market=Y% gap=Zpp".
+        #   per-MATCH  (PENALTY_STACK, FORM_DIVERGE, GAMMA_INVARIANT) —
+        #               describe match-level inputs (stacked penalties, recent
+        #               vs season xG divergence). model_prob/book_implied are
+        #               NULL by design. Use the description text directly so
+        #               the AI doesn't see "model=? market=? gap=?" and
+        #               conclude the pipeline failed.
+        PER_MATCH_TYPES = {"FORM_DIVERGE", "PENALTY_STACK", "GAMMA_INVARIANT"}
+        visible_model_probs = {
+            round(b.get("model_prob"), 3)
+            for b in (ev_bets or [])
+            if b.get("model_prob") is not None
+        }
         anom_lines = []
         for a in anomalies:
             t = a.get('anomaly_type')
+            if t in PER_MATCH_TYPES:
+                # Render description verbatim — it's already human-readable
+                # and contains the actual numeric impact (e.g. "combined
+                # attack multiplier 0.865 (−13.5%)" for PENALTY_STACK).
+                desc = a.get('description') or "(no description)"
+                anom_lines.append(f"- {t}: {desc}")
+                continue
+            # Per-bet path
             mp = a.get('model_prob')
-            # Per-prediction anomalies (FORM_DIVERGE, PENALTY_STACK) have no
-            # model_prob/book_implied — pass them through unconditionally
-            # since they describe match-level inputs, not specific bets.
-            is_per_prediction = mp is None or t in ("FORM_DIVERGE", "PENALTY_STACK", "GAMMA_INVARIANT")
-            if not is_per_prediction and visible_model_probs and round(mp, 3) not in visible_model_probs:
+            if mp is None:
+                continue  # malformed row — skip
+            if visible_model_probs and round(mp, 3) not in visible_model_probs:
                 continue  # bet was filtered out — don't confuse the AI
             bp = a.get('book_implied')
             es = a.get('edge_shown')
