@@ -158,6 +158,21 @@ def check_cash_eligibility(bet: dict) -> tuple[bool, str]:
     paper-first on top of A+B+C just adds friction without adding
     safety. Paper-first removed; the audit table still flags any cash
     bet without a paper counterpart for review."""
+    # Pre-check — if the bet pipeline already declared it non-actionable
+    # (PHANTOM_EDGE > 25% trips this), refuse cash with the upstream
+    # reason. Without this, a PHANTOM_EDGE bet had stake=$0 (correct)
+    # but cash_eligible=True (inconsistent), letting the user click a
+    # disabled-stake button.
+    if bet.get("actionable") is False:
+        upstream = bet.get("lockout_reason") or ""
+        flags = bet.get("anomaly_flags") or []
+        excludes = next((f for f in flags if f.get("excludes_bet")), None)
+        reason = (
+            excludes.get("description") if excludes else
+            upstream or
+            "Bet excluded by anomaly detector — stake set to $0"
+        )
+        return False, reason
     # C — daily loss cap (most aggressive — overrides everything else)
     if daily_loss_cap_hit():
         pnl = todays_cash_pnl()
