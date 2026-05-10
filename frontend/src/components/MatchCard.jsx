@@ -71,6 +71,45 @@ function rowKey(b) {
   return `${b.market || 'h2h'}|${b.market_line ?? ''}|${b.outcome}`
 }
 
+// Trend chip rendered inline next to each team name. attack > 0 = improving
+// in attack; defense > 0 = conceding more (bad). Only render the strongest
+// signal so the card stays scannable.
+function TrendBadge({ attack, defense }) {
+  if (attack == null && defense == null) return null
+  const tickets = []
+  if (attack != null && Math.abs(attack) > 0.30) {
+    tickets.push({
+      tone: attack > 0 ? 'good' : 'bad',
+      icon: attack > 0 ? '📈' : '📉',
+      label: `${attack >= 0 ? '+' : ''}${attack.toFixed(2)} attack`,
+    })
+  }
+  if (defense != null && Math.abs(defense) > 0.30) {
+    tickets.push({
+      // For defense, NEGATIVE = improving (conceding less) = good
+      tone: defense < 0 ? 'good' : 'bad',
+      icon: defense < 0 ? '📈' : '📉',
+      label: `${defense >= 0 ? '+' : ''}${defense.toFixed(2)} defense${defense < 0 ? ' (improving)' : ''}`,
+    })
+  }
+  if (tickets.length === 0) return null
+  return (
+    <span className="inline-flex gap-1 ml-1.5 align-middle">
+      {tickets.map((t, i) => (
+        <span
+          key={i}
+          title={t.label}
+          className={`inline-flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded ${
+            t.tone === 'good' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'
+          }`}
+        >
+          {t.icon} {t.label}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 function buildView(view, prediction) {
   if (!view) return []
   const items = []
@@ -226,10 +265,19 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
           </label>
           <div>
             <div className={`font-semibold text-base tracking-tight ${betsPlaced ? 'line-through text-slate-400' : ''}`}>
-              {prediction.home_team} <span className="text-slate-500">vs</span> {prediction.away_team}
+              {prediction.home_team}
+              <TrendBadge attack={prediction.home_attack_trend} defense={prediction.home_defense_trend} />
+              <span className="text-slate-500"> vs </span>
+              {prediction.away_team}
+              <TrendBadge attack={prediction.away_attack_trend} defense={prediction.away_defense_trend} />
             </div>
             <div className="text-xs text-slate-400 mt-0.5">
               {prediction.league?.toUpperCase() || league?.toUpperCase()} · {fmtTime(prediction.kickoff_time)}
+              {prediction.form_breakpoint_detected ? (
+                <span className="ml-2 text-warn font-semibold">
+                  ⚠ FORM BREAKPOINT — {prediction.form_breakpoint_team} ratio {prediction.breakpoint_ratio?.toFixed(2)} · blend {prediction.blend_used || '80/20'}
+                </span>
+              ) : null}
             </div>
           </div>
         </div>

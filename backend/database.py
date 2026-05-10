@@ -198,6 +198,20 @@ CREATE TABLE IF NOT EXISTS book_balance (
 -- season-to-date stats we already pull during data_sync. Activated by the
 -- OPPONENT_ADJUSTED_XG env flag — table populates regardless so we can
 -- backtest before flipping the switch.
+-- Manager-change tracking (Addition 3). Nightly job pulls API-Football's
+-- coach endpoint per team; on a detected change, records the date and
+-- counts post-change games. data_sync.py weights pre-change games at
+-- 0.10 and flags LOW confidence when post-change sample < 5.
+CREATE TABLE IF NOT EXISTS manager_changes (
+    team_id INTEGER PRIMARY KEY,
+    team_name TEXT,
+    old_manager TEXT,
+    new_manager TEXT,
+    change_date TEXT,
+    games_since_change INTEGER NOT NULL DEFAULT 0,
+    last_checked TEXT DEFAULT (datetime('now'))
+);
+
 -- Per-market calibration factors (self-calibration spec piece 1).
 -- The 00:30 nightly job computes actual_rate / model_avg_pct for each
 -- (market, outcome[, line]) bucket and stores the multiplicative
@@ -488,6 +502,20 @@ def init_db(path: str | None = None) -> None:
         # Anomaly dedup: add column + UNIQUE index, backfill, drop dupes.
         _add_column_if_missing(conn, "anomaly_log", "dedup_key", "TEXT")
         _backfill_anomaly_dedup(conn)
+        # Trend / form-breakpoint columns (Additions 1 + 2).
+        for col, decl in (
+            ("home_attack_trend",         "REAL"),
+            ("home_defense_trend",        "REAL"),
+            ("away_attack_trend",         "REAL"),
+            ("away_defense_trend",        "REAL"),
+            ("trend_adjustment_applied",  "INTEGER DEFAULT 0"),
+            ("form_breakpoint_detected",  "INTEGER DEFAULT 0"),
+            ("form_breakpoint_team",      "TEXT"),
+            ("breakpoint_ratio",          "REAL"),
+            ("blend_overridden",          "INTEGER DEFAULT 0"),
+            ("blend_used",                "TEXT"),
+        ):
+            _add_column_if_missing(conn, "model_predictions", col, decl)
         # Additive migrations for derived markets
         _add_column_if_missing(conn, "model_predictions", "btts_yes_pct", "REAL")
         _add_column_if_missing(conn, "model_predictions", "score_matrix_json", "TEXT")

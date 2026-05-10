@@ -445,23 +445,63 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                 if away_xg_for and away_xg_against:
                     a_season_for     = sum(away_xg_for) / len(away_xg_for)
                     a_season_against = sum(away_xg_against) / len(away_xg_against)
+            # Addition 1 — trend detection (last-3 vs prior-4 means).
+            # Trend adjustments are multiplicative scalings of the form
+            # arrays; downstream weighted-average + Poisson math then
+            # naturally produces the trend-adjusted home_xg / away_xg.
+            import trend_detection
+            home_trend = trend_detection.compute_trends(home_xg_for, home_xg_against)
+            away_trend = trend_detection.compute_trends(away_xg_for, away_xg_against)
+            home_xg_for_adj, home_xg_against_adj = trend_detection.apply_trend_to_arrays(
+                home_xg_for, home_xg_against, home_trend,
+            )
+            away_xg_for_adj, away_xg_against_adj = trend_detection.apply_trend_to_arrays(
+                away_xg_for, away_xg_against, away_trend,
+            )
+
+            # Addition 2 — form-breakpoint detection. We test attack
+            # (xg_for) and defense (xg_against) for both teams; if EITHER
+            # side has a >25% deviation between last-5 and prev-5, we
+            # override season_blend to 0.80/0.20 so the recent window
+            # dominates. Pick the strongest detected breakpoint to
+            # surface in the prediction record.
+            breakpoint_overall = None
+            breakpoint_team = None
+            for side_name, xgf, xga in (
+                ("home_attack",  home_xg_for, []),
+                ("home_defense", [], home_xg_against),
+                ("away_attack",  away_xg_for, []),
+                ("away_defense", [], away_xg_against),
+            ):
+                bp = trend_detection.detect_breakpoint(xgf or xga)
+                if bp.detected:
+                    cand_team = team_aliases.canonical(
+                        fx["teams"]["home" if side_name.startswith("home") else "away"]["name"]
+                    )
+                    # Prefer the largest-magnitude breakpoint
+                    if (breakpoint_overall is None
+                            or abs(bp.ratio - 1.0) > abs(breakpoint_overall.ratio - 1.0)):
+                        breakpoint_overall = bp
+                        breakpoint_overall.side = side_name
+                        breakpoint_team = cand_team
+
             home_form = model.TeamForm(
                 name=team_aliases.canonical(fx["teams"]["home"]["name"]),
-                xg_for=home_xg_for,
-                xg_against=home_xg_against,
+                xg_for=home_xg_for_adj,
+                xg_against=home_xg_against_adj,
                 rest_days=_rest_days_for_team(home_id, kickoff_iso, team_recent.get(home_id, [])),
                 top_scorer_out=scorer_out_map.get(home_id, False),
-                games_played=len(home_xg_for),
+                games_played=len(home_xg_for_adj),
                 season_avg_for=h_season_for,
                 season_avg_against=h_season_against,
             )
             away_form = model.TeamForm(
                 name=team_aliases.canonical(fx["teams"]["away"]["name"]),
-                xg_for=away_xg_for,
-                xg_against=away_xg_against,
+                xg_for=away_xg_for_adj,
+                xg_against=away_xg_against_adj,
                 rest_days=_rest_days_for_team(away_id, kickoff_iso, team_recent.get(away_id, [])),
                 top_scorer_out=scorer_out_map.get(away_id, False),
-                games_played=len(away_xg_for),
+                games_played=len(away_xg_for_adj),
                 season_avg_for=a_season_for,
                 season_avg_against=a_season_against,
             )
@@ -485,15 +525,24 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             # carries Aug–Oct results from before injuries / mid-season form
             # changes. Push more weight onto the recent window:
             #   GW <= 29: default 0.60 recent / 0.40 season
-            #   GW 30-35: 0.70 / 0.30
-            #   GW 36-38: 0.75 / 0.25
+            #   GW 30-34: 0.70 / 0.30
+            #   GW 35+:   0.80 / 0.20  (Addition 5 — late-season override)
             if league == "epl":
                 gw = _epl_gameweek(this_round)
                 if gw is not None:
-                    if gw >= 36:
-                        match_params = dataclasses.replace(match_params, season_blend=0.75)
+                    if gw >= 35:
+                        match_params = dataclasses.replace(match_params, season_blend=0.80)
                     elif gw >= 30:
                         match_params = dataclasses.replace(match_params, season_blend=0.70)
+            # Addition 2 — form-breakpoint blend override. When either
+            # side has a >25% recent-vs-prior swing, lean hard on the
+            # recent window (80/20). Stronger override than EPL late-
+            # season tightening; runs after it so it wins the tie.
+            blend_overridden = False
+            if breakpoint_overall is not None:
+                match_params = dataclasses.replace(match_params, season_blend=trend_detection.BREAKPOINT_BLEND)
+                blend_overridden = True
+            blend_used = f"{int(match_params.season_blend*100)}/{int((1-match_params.season_blend)*100)}"
             prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
 
             # Fix 2 — tactical suppressor adjustment. When either team is
@@ -528,6 +577,17 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             # weight the prediction less.
             if is_tournament_knockout and (home_xg_info["fallback_used"] or away_xg_info["fallback_used"]):
                 prediction.confidence = "LOW"
+
+            # Addition 3 — manager-change LOW confidence override.
+            try:
+                import manager_changes
+                for tid in (home_id, away_id):
+                    force_low, _note = manager_changes.should_force_low_confidence(tid)
+                    if force_low:
+                        prediction.confidence = "LOW"
+                        break
+            except Exception:
+                pass
 
             match_id = f"af-{fx['fixture']['id']}"
 
@@ -572,9 +632,15 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                          home_rest_days, away_rest_days,
                          home_penalties_applied, away_penalties_applied,
                          home_season_avg_for, home_season_avg_against,
-                         away_season_avg_for, away_season_avg_against)
+                         away_season_avg_for, away_season_avg_against,
+                         home_attack_trend, home_defense_trend,
+                         away_attack_trend, away_defense_trend,
+                         trend_adjustment_applied,
+                         form_breakpoint_detected, form_breakpoint_team,
+                         breakpoint_ratio, blend_overridden, blend_used)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(match_id) DO UPDATE SET
                         home_team               = excluded.home_team,
                         away_team               = excluded.away_team,
@@ -608,6 +674,16 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                         home_season_avg_against = excluded.home_season_avg_against,
                         away_season_avg_for     = excluded.away_season_avg_for,
                         away_season_avg_against = excluded.away_season_avg_against,
+                        home_attack_trend       = excluded.home_attack_trend,
+                        home_defense_trend      = excluded.home_defense_trend,
+                        away_attack_trend       = excluded.away_attack_trend,
+                        away_defense_trend      = excluded.away_defense_trend,
+                        trend_adjustment_applied= excluded.trend_adjustment_applied,
+                        form_breakpoint_detected= excluded.form_breakpoint_detected,
+                        form_breakpoint_team    = excluded.form_breakpoint_team,
+                        breakpoint_ratio        = excluded.breakpoint_ratio,
+                        blend_overridden        = excluded.blend_overridden,
+                        blend_used              = excluded.blend_used,
                         created_at              = datetime('now')
                     """,
                     (match_id, home_form.name, away_form.name, league, kickoff_iso,
@@ -629,7 +705,14 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                      _json.dumps(prediction.home_penalties_applied),
                      _json.dumps(prediction.away_penalties_applied),
                      home_form.season_avg_for, home_form.season_avg_against,
-                     away_form.season_avg_for, away_form.season_avg_against),
+                     away_form.season_avg_for, away_form.season_avg_against,
+                     home_trend.attack_trend, home_trend.defense_trend,
+                     away_trend.attack_trend, away_trend.defense_trend,
+                     int(home_trend.applied or away_trend.applied),
+                     int(breakpoint_overall is not None),
+                     breakpoint_team,
+                     breakpoint_overall.ratio if breakpoint_overall else None,
+                     int(blend_overridden), blend_used),
                 )
             summary["predictions_upserted"] += 1
 
