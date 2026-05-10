@@ -180,9 +180,20 @@ def _log_bias_entry(conn, market, outcome, line, model_avg, actual_rate, factor,
     )
     try:
         conn.execute(
-            "INSERT INTO bias_log (bias_type, league_key, description) "
-            "VALUES (?, ?, ?)",
-            ("GOAL_MARKET_CALIBRATION", "all", desc[:500]),
+            """
+            INSERT INTO bias_log
+              (check_name, league_key, sample_size, expected_rate, actual_rate,
+               deviation, flagged, severity, suggested_adjustment, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "GOAL_MARKET_CALIBRATION", "all", n,
+                round(model_avg, 4), round(actual_rate, 4),
+                round(gap, 4), 1,
+                "warn" if abs(gap) <= 0.20 else "critical",
+                f"factor {factor:.3f} {'applied' if applied else 'pending'}",
+                desc[:500],
+            ),
         )
     except Exception:
         log.exception("bias_log insert failed for %s", label)
