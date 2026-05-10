@@ -107,6 +107,15 @@ class MatchPrediction:
     away_penalty_multiplier: float = 1.0
     penalty_floor_applied: bool = False
     home_gamma_used: float = 1.0
+    # Fix 1 — set when the Poisson BTTS Yes was dampened due to a side's
+    # xG falling below the low-scoring threshold (away_xg < 1.0 or
+    # home_xg < 1.0). False if no dampening fired.
+    btts_low_xg_adjustment_applied: bool = False
+    # Fix 2 — set when a tactical-suppressor team's factor was applied
+    # to the total xG before computing 1X2 / BTTS / totals probabilities.
+    tactical_suppressor_applied: bool = False
+    suppressor_team: str | None = None
+    suppressor_factor: float = 1.0
 
     def over_pct(self, line: float) -> float:
         """P(home_goals + away_goals > line). Works for any line we can resolve from the 6x6 matrix."""
@@ -279,6 +288,29 @@ def predict(
 
     rounded_matrix = [[round(p, 5) for p in row] for row in matrix]
     btts_yes = _btts_yes_from_matrix(matrix)
+    # Fix 1 — when one side has very low predicted xG, the Poisson-based
+    # BTTS Yes calc tends to overstate the both-teams-score probability
+    # (independence between the two scoring distributions doesn't hold
+    # for low-scoring teams that often produce 0 across whole matches).
+    # Empirically the model has been calling BTTS Yes on lopsided
+    # matchups and losing — apply a multiplicative dampener and
+    # renormalize implicitly (BTTS No = 1 - BTTS Yes).
+    btts_low_xg_adjustment_applied = False
+    if away_xg < 0.70:
+        btts_yes *= 0.75
+        btts_low_xg_adjustment_applied = True
+    elif away_xg < 1.00:
+        btts_yes *= 0.85
+        btts_low_xg_adjustment_applied = True
+    # Same dampener mirrored for low home_xg (rare but possible — heavy
+    # away favorite at a struggling host).
+    if home_xg < 0.70:
+        btts_yes *= 0.75
+        btts_low_xg_adjustment_applied = True
+    elif home_xg < 1.00:
+        btts_yes *= 0.85
+        btts_low_xg_adjustment_applied = True
+    btts_yes = max(0.0, min(1.0, btts_yes))
 
     return MatchPrediction(
         home_team=home.name,
@@ -290,6 +322,7 @@ def predict(
         away_win_pct=round(away_win, 4),
         btts_yes_pct=round(btts_yes, 4),
         btts_no_pct=round(1.0 - btts_yes, 4),
+        btts_low_xg_adjustment_applied=btts_low_xg_adjustment_applied,
         confidence=confidence,
         score_matrix=rounded_matrix,
         home_penalties_applied=home_pens,

@@ -160,6 +160,11 @@ def _devig_avg_for_offers(per_book: dict[str, dict[str, float]]) -> dict[str, fl
 async def lifespan(app: FastAPI):
     init_db()
     book_balance.seed_from_env()  # idempotent — won't overwrite existing balances
+    try:
+        import tactical_suppressors
+        tactical_suppressors.seed_manual_entries()  # Atletico etc — idempotent
+    except Exception:
+        pass
     sched.auto_start_if_enabled()
     yield
     sched.stop()
@@ -431,6 +436,36 @@ async def get_ev_bets(
     # markets that have already triggered get suspended by the books anyway.
     now_utc = datetime.now(timezone.utc)
 
+    # Self-cal Piece 1 — load active per-market calibration factors once
+    # per /ev-bets call. Empty dict on first night (before factors apply).
+    try:
+        import market_calibration
+        calibration_factors = market_calibration.get_active_factors()
+    except Exception:
+        calibration_factors = {}
+
+    def _apply_cal(market: str, market_line: float | None,
+                   raw: dict[str, float]) -> tuple[dict[str, float], dict[str, dict]]:
+        """Multiply each outcome's raw model_prob by its (market,outcome[,line])
+        factor if applied=1. Returns (calibrated_probs, per_outcome_meta)
+        where meta carries raw_prob + factor for downstream logging."""
+        out: dict[str, float] = {}
+        meta: dict[str, dict] = {}
+        for outcome, prob in raw.items():
+            key = market_calibration._cal_key(market, outcome, market_line)
+            f = calibration_factors.get(key)
+            if f is not None and prob is not None:
+                cal = max(0.0, min(1.0, prob * f["calibration_factor"]))
+                out[outcome] = cal
+                meta[outcome] = {
+                    "cal_key": key,
+                    "raw_model_prob": prob,
+                    "calibration_factor": f["calibration_factor"],
+                }
+            else:
+                out[outcome] = prob
+        return out, meta
+
     bets: list[dict] = []
     for p in preds:
         match = by_pair.get(_key(p["home_team"], p["away_team"]))
@@ -454,13 +489,17 @@ async def get_ev_bets(
         # h2h scan
         ev_bets: list[ev_calculator.EVBet] = []
         offer_lookup: dict[tuple[str, float | None], dict[str, dict[str, float]]] = {}
+        cal_meta: dict[tuple, dict[str, dict]] = {}  # (market, line) -> per-outcome cal meta
 
         if markets["h2h"]:
+            raw = {"home": p["home_win_pct"], "draw": p["draw_pct"], "away": p["away_win_pct"]}
+            cal_probs, meta = _apply_cal("h2h", None, raw)
+            cal_meta[("h2h", None)] = meta
             ev_bets += ev_calculator.find_ev_bets_market(
                 market="h2h", market_label=None, market_line=None,
                 match_id=p["match_id"],
                 home_team=p["home_team"], away_team=p["away_team"],
-                model_probs={"home": p["home_win_pct"], "draw": p["draw_pct"], "away": p["away_win_pct"]},
+                model_probs=cal_probs,
                 confidence=p["confidence"],
                 offers_by_book=markets["h2h"],
                 min_edge=effective_min_edge,
@@ -471,11 +510,14 @@ async def get_ev_bets(
         # btts scan
         btts_yes = p["btts_yes_pct"]
         if markets["btts"] and btts_yes is not None:
+            raw = {"yes": btts_yes, "no": 1.0 - btts_yes}
+            cal_probs, meta = _apply_cal("btts", None, raw)
+            cal_meta[("btts", None)] = meta
             ev_bets += ev_calculator.find_ev_bets_market(
                 market="btts", market_label="BTTS", market_line=None,
                 match_id=p["match_id"],
                 home_team=p["home_team"], away_team=p["away_team"],
-                model_probs={"yes": btts_yes, "no": 1.0 - btts_yes},
+                model_probs=cal_probs,
                 confidence=p["confidence"],
                 offers_by_book=markets["btts"],
                 min_edge=effective_min_edge,
@@ -492,11 +534,14 @@ async def get_ev_bets(
             if matrix:
                 for line, by_book in markets["totals"].items():
                     over = sum(matrix[h][a] for h in range(len(matrix)) for a in range(len(matrix[0])) if (h + a) > line)
+                    raw = {"over": over, "under": 1.0 - over}
+                    cal_probs, meta = _apply_cal("totals", line, raw)
+                    cal_meta[("totals", line)] = meta
                     ev_bets += ev_calculator.find_ev_bets_market(
                         market="totals", market_label=f"Over/Under {line}", market_line=line,
                         match_id=p["match_id"],
                         home_team=p["home_team"], away_team=p["away_team"],
-                        model_probs={"over": over, "under": 1.0 - over},
+                        model_probs=cal_probs,
                         confidence=p["confidence"],
                         offers_by_book=by_book,
                         min_edge=effective_min_edge,
@@ -609,6 +654,28 @@ async def get_ev_bets(
             except Exception:
                 row["cash_eligible"] = True
                 row["cash_reason"]   = ""
+            # Self-cal Piece 1 — surface raw vs calibrated for the dashboard
+            # ("Model raw 65.2% / Calibrated 58.7% (×0.90)" tooltip + log).
+            cm = cal_meta.get((b.market, b.market_line), {}).get(b.outcome)
+            if cm:
+                row["model_prob_raw"] = round(cm["raw_model_prob"], 5)
+                row["calibration_factor"] = round(cm["calibration_factor"], 4)
+                edge_before = (cm["raw_model_prob"] or 0) - (b.true_implied_prob or 0)
+                try:
+                    market_calibration.log_application(
+                        bet_id=None,
+                        cal_key=cm["cal_key"],
+                        raw_prob=cm["raw_model_prob"],
+                        factor=cm["calibration_factor"],
+                        calibrated_prob=b.model_prob,
+                        edge_before=edge_before,
+                        edge_after=b.edge,
+                    )
+                except Exception:
+                    pass
+            else:
+                row["model_prob_raw"] = b.model_prob
+                row["calibration_factor"] = 1.0
             bets.append(row)
 
     # Dedupe by bet identity — the inner market passes (h2h / btts / each

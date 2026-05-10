@@ -94,12 +94,29 @@ async def task_model_validation() -> dict:
 # ===========================================================================
 
 async def task_auto_calibration() -> dict:
-    """Level 3 auto-calibration. Deferred — current pipeline is manual via
-    /admin/calibrate. Activating this requires the bias-driven adjustment
-    rules + safe-bound enforcement described in spec section 2 task 2."""
+    """00:30 NY — refresh per-market calibration factors from settled
+    paper bets. Self-cal Piece 1 + Fix 3.
+
+    Runs unconditionally; the 10-bet (goal-market) and 20-bet (h2h)
+    sample-size gates are inside refresh_factors. Returns a summary
+    of buckets evaluated, applied, and deferred."""
+    import market_calibration
+    summary = market_calibration.refresh_factors()
+    n_total = summary["buckets"]
+    n_applied = summary["applied"]
+    if n_total == 0:
+        return {
+            "status": "DEFERRED",
+            "summary": "no settled paper bets yet — calibration re-arms when the first market closes",
+        }
     return {
-        "status": "DEFERRED",
-        "summary": "auto-calibration deferred; current calibration is manual via /admin/calibrate",
+        "status": "PASS",
+        "summary": (
+            f"{n_total} buckets evaluated · {n_applied} applied · "
+            f"{summary['deferred_sample']} pending sample · "
+            f"{summary['deferred_bounds']} skipped (factor outside [0.70, 1.30])"
+        ),
+        **summary,
     }
 
 

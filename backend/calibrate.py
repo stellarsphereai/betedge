@@ -22,7 +22,10 @@ from database import db
 log = logging.getLogger("arb.calibrate")
 
 CALIBRATION_LEAGUES = ("epl", "ucl", "uel")  # WC handled separately
-N_MIN_FOR_GRID_SEARCH = 100
+N_MIN_FOR_GRID_SEARCH = 20  # Self-cal Piece 2 — lowered from 100 so auto-cal
+                            # starts on real data sooner. Per-league grid
+                            # searches re-trigger every ~10 new settled
+                            # results (monthly cron + on-demand admin).
 
 
 def settled_count_per_league() -> dict[str, int]:

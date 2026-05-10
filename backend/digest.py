@@ -175,6 +175,38 @@ def render(
     mode_label = "WORLD CUP LIVE" if league_mode == "world_cup" else "EPL PAPER TRADE"
     lines.append(f"Mode: {mode_label}")
 
+    # Goal-market calibration roll-up (self-cal Piece 3). Always render
+    # so the user sees how factor application is progressing toward the
+    # 10-bet trigger threshold per market.
+    try:
+        import market_calibration
+        rows = market_calibration.all_factors()
+        if rows:
+            lines.append("")
+            lines.append("=== GOAL MARKET CALIBRATION ===")
+            applied_rows = [r for r in rows if r["applied"]]
+            pending_rows = [r for r in rows if not r["applied"]]
+            if applied_rows:
+                for r in applied_rows:
+                    label = r["market"] + (f" {r['market_line']}" if r["market_line"] is not None else "") + " " + r["outcome"]
+                    lines.append(
+                        f"  {label:<22} model {r['model_avg_pct']*100:5.1f}% · actual "
+                        f"{r['actual_rate']*100:5.1f}% · factor {r['calibration_factor']:.2f} "
+                        f"· n={r['sample_size']:<3} · ✅ applied"
+                    )
+            if pending_rows:
+                lines.append("")
+                lines.append("Pending sample size:")
+                for r in pending_rows:
+                    label = r["market"] + (f" {r['market_line']}" if r["market_line"] is not None else "") + " " + r["outcome"]
+                    need = market_calibration._min_sample(r["market"])
+                    lines.append(
+                        f"  {label:<22} {r['sample_size']}/{need} bets "
+                        f"(model {r['model_avg_pct']*100:.0f}% · actual {r['actual_rate']*100:.0f}%)"
+                    )
+    except Exception:
+        pass
+
     # Cash restriction state — render BEFORE the rollup so the user sees
     # the rules first, then the numbers. Always rendered (even pre-cash)
     # because the restrictions exist regardless of whether bets are placed.

@@ -496,6 +496,31 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
                         match_params = dataclasses.replace(match_params, season_blend=0.70)
             prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
 
+            # Fix 2 — tactical suppressor adjustment. When either team is
+            # in tactical_suppressors with classification='suppressor',
+            # multiply the predicted xGs by the suppression factor before
+            # we hand the prediction off to consumers. This dampens BTTS
+            # Yes / Over probabilities for low-scoring tactical sides
+            # (e.g. Atlético Madrid 0.75) without re-running the full
+            # Dixon-Coles solve. Skip for h2h-only consumers since 1X2
+            # is preserved via the existing prediction.
+            try:
+                import tactical_suppressors
+                supp = tactical_suppressors.get_for_match(home_id, away_id)
+                supp_match = supp["home"] or supp["away"]
+                if supp_match and supp_match.get("classification") == "suppressor":
+                    factor = float(supp_match.get("suppression_factor") or 1.0)
+                    factor = max(0.5, min(1.5, factor))
+                    prediction.home_xg = round(prediction.home_xg * factor, 3)
+                    prediction.away_xg = round(prediction.away_xg * factor, 3)
+                    prediction.btts_yes_pct = round(prediction.btts_yes_pct * factor, 4)
+                    prediction.btts_no_pct = round(1.0 - prediction.btts_yes_pct, 4)
+                    prediction.tactical_suppressor_applied = True
+                    prediction.suppressor_team = supp_match.get("team_name")
+                    prediction.suppressor_factor = factor
+            except Exception:
+                log.exception("tactical suppressor adjustment failed")
+
             # When the UCL knockout filter fell back to discounted-blend
             # (because either team had <3 knockout-stage games available),
             # the input data is structurally weaker — force LOW confidence

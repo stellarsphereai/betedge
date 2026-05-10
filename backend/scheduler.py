@@ -369,6 +369,33 @@ async def job_morning_report():
         log.exception("morning_report: send crashed")
 
 
+async def job_clv_feedback_eval():
+    """23:50 NY — refresh rolling 10-bet CLV avg + flip digest send hour
+    if needed. Self-cal Piece 5."""
+    log.info("scheduler: 23:50 CLV feedback eval")
+    try:
+        import clv_feedback
+        return clv_feedback.evaluate_and_update()
+    except Exception:
+        log.exception("scheduler: CLV feedback eval crashed")
+        return None
+
+
+async def job_weekly_tactical_suppressor_detect():
+    """Sunday 04:15 NY — recompute tactical_suppressors from settled
+    matches. Self-cal Piece 4 + Fix 2 (auto-detection layer)."""
+    log.info("scheduler: Sunday 04:15 tactical-suppressor auto-detect")
+    try:
+        import tactical_suppressors
+        seeded = tactical_suppressors.seed_manual_entries()
+        result = tactical_suppressors.auto_detect_from_results()
+        result["manual_seeded_now"] = seeded
+        return result
+    except Exception:
+        log.exception("scheduler: tactical suppressor auto-detect crashed")
+        return None
+
+
 async def job_real_trade_audit():
     """02:45 NY-local — refresh the real_trade_audit table after the 02:30
     auto-settle pass. Spec 1.7: per-cash-bet comparison against paper
@@ -633,6 +660,8 @@ def build() -> AsyncIOScheduler:
         # rolls up overnight pass/fail, real-money status, and readiness score.
         ("nightly_model_validation",       job_nightly_model_validation,       CronTrigger(hour=0,  minute=0,  timezone=TIMEZONE)),
         ("nightly_auto_calibration",       job_nightly_auto_calibration,       CronTrigger(hour=0,  minute=30, timezone=TIMEZONE)),
+        ("nightly_clv_feedback",           job_clv_feedback_eval,              CronTrigger(hour=23, minute=50, timezone=TIMEZONE)),
+        ("weekly_tactical_suppressor",     job_weekly_tactical_suppressor_detect, CronTrigger(day_of_week="sun", hour=4, minute=15, timezone=TIMEZONE)),
         ("nightly_wc_data_prep",           job_nightly_wc_data_prep,           CronTrigger(hour=1,  minute=0,  timezone=TIMEZONE)),
         ("nightly_system_health",          job_nightly_system_health,          CronTrigger(hour=1,  minute=30, timezone=TIMEZONE)),
         ("nightly_feature_verification",   job_nightly_feature_verification,   CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),

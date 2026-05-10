@@ -198,6 +198,69 @@ CREATE TABLE IF NOT EXISTS book_balance (
 -- season-to-date stats we already pull during data_sync. Activated by the
 -- OPPONENT_ADJUSTED_XG env flag — table populates regardless so we can
 -- backtest before flipping the switch.
+-- Per-market calibration factors (self-calibration spec piece 1).
+-- The 00:30 nightly job computes actual_rate / model_avg_pct for each
+-- (market, outcome[, line]) bucket and stores the multiplicative
+-- correction. Edge calculator multiplies model_prob by the factor at
+-- /ev-bets time so cash bets are graded against calibrated model probs.
+-- Factors only "apply" when sample_size >= MIN and factor in [0.70, 1.30]
+-- — outside that range usually means a data problem, not a calibration need.
+CREATE TABLE IF NOT EXISTS market_calibration_factors (
+    cal_key TEXT PRIMARY KEY,           -- "btts:yes" / "totals:2.5:over" / "h2h:home"
+    market TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    market_line REAL,
+    model_avg_pct REAL NOT NULL,
+    actual_rate REAL NOT NULL,
+    calibration_factor REAL NOT NULL,
+    sample_size INTEGER NOT NULL,
+    applied INTEGER NOT NULL DEFAULT 0,
+    last_updated TEXT DEFAULT (datetime('now'))
+);
+
+-- One row per +EV bet whose model_prob got multiplicatively adjusted by
+-- a factor from market_calibration_factors. Used by the morning digest
+-- + admin page to show calibration provenance and to monitor drift.
+CREATE TABLE IF NOT EXISTS calibration_applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bet_id INTEGER,                     -- nullable — fires per-/ev-bets call too
+    cal_key TEXT,
+    raw_model_prob REAL,
+    calibration_factor REAL,
+    calibrated_prob REAL,
+    edge_before REAL,
+    edge_after REAL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cal_app_created ON calibration_applications(created_at);
+
+-- Tactical suppressors (piece 4) — teams whose actual goals conceded
+-- consistently come in below xG. Auto-detected weekly from settled
+-- matches; a low ratio (≤0.75) suppresses opposing xG_for predictions
+-- against this team. A high ratio (≥1.25) flags vulnerability.
+CREATE TABLE IF NOT EXISTS tactical_suppressors (
+    team_id INTEGER PRIMARY KEY,
+    team_name TEXT,
+    suppression_factor REAL NOT NULL,   -- actual_xGA / model_xGA — clamped [0.5, 1.5]
+    sample_size INTEGER NOT NULL,
+    classification TEXT NOT NULL,       -- 'suppressor' | 'vulnerable' | 'neutral'
+    last_updated TEXT DEFAULT (datetime('now'))
+);
+
+-- CLV feedback state (piece 5) — drives whether the morning digest fires
+-- at 06:00 (early-bet timing) or 08:00 (default). Single-row table,
+-- updated by the nightly CLV-rolling job.
+CREATE TABLE IF NOT EXISTS clv_feedback_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- always row 1
+    rolling_clv_avg REAL,
+    sample_size INTEGER,
+    digest_send_hour INTEGER NOT NULL DEFAULT 8,  -- 6 or 8
+    timing_changed_at TEXT,
+    consecutive_negative_at_6am INTEGER NOT NULL DEFAULT 0,
+    last_updated TEXT DEFAULT (datetime('now'))
+);
+INSERT OR IGNORE INTO clv_feedback_state (id, digest_send_hour) VALUES (1, 8);
+
 -- Spec section 2 — nightly automation pipeline.
 -- One row per task per run. Status = 'PASS' / 'FAIL' / 'DEFERRED' / 'SKIP'.
 -- Three consecutive FAIL rows for the same task_name trigger the 6am
