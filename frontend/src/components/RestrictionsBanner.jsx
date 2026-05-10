@@ -59,10 +59,12 @@ export default function RestrictionsBanner({ restrictions }) {
           <span className="text-slate-500 mr-1.5">Daily loss cap:</span>
           <span className="font-mono">${(r.daily_loss_cap_usd ?? 50).toFixed(0)}</span>
         </div>
-        <div>
-          <span className="text-slate-500 mr-1.5">Paper-first required:</span>
-          <span className="font-mono text-good">on every cash bet</span>
-        </div>
+        {r.paper_first_required && (
+          <div>
+            <span className="text-slate-500 mr-1.5">Paper-first required:</span>
+            <span className="font-mono text-good">on every cash bet</span>
+          </div>
+        )}
       </div>
 
       {/* Unlock progress for the goal-markets gate */}

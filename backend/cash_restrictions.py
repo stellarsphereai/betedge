@@ -47,10 +47,12 @@ def is_market_restricted(market: Optional[str], outcome: Optional[str]) -> bool:
 
 
 def edge_below_cash_minimum(edge: Optional[float]) -> bool:
-    """Spec B — cash requires edge >= 6%."""
+    """Spec B — cash requires edge >= 6%. Tolerance of 0.0005 so a bet
+    that displays as '6.0%' but is stored as 0.05996 still clears the gate
+    (frontend rounds for display)."""
     if edge is None:
         return True
-    return float(edge) < CASH_MIN_EDGE
+    return float(edge) < (CASH_MIN_EDGE - 0.0005)
 
 
 def todays_cash_pnl() -> float:
@@ -147,7 +149,15 @@ def goal_market_paper_progress() -> dict:
 def check_cash_eligibility(bet: dict) -> tuple[bool, str]:
     """Combined gate. Returns (allowed, reason). Reason is empty when
     allowed=True. Used by POST /bets to reject + by the UI to grey
-    out individual bet buttons."""
+    out individual bet buttons.
+
+    Spec D (paper-first) was originally added as a discipline mechanism
+    but in practice spec A already blocks the unvalidated markets (goal
+    markets + draw) — the only markets that reach this gate are h2h
+    home/away, which the model has been validated longest on. Layering
+    paper-first on top of A+B+C just adds friction without adding
+    safety. Paper-first removed; the audit table still flags any cash
+    bet without a paper counterpart for review."""
     # C — daily loss cap (most aggressive — overrides everything else)
     if daily_loss_cap_hit():
         pnl = todays_cash_pnl()
@@ -166,17 +176,6 @@ def check_cash_eligibility(bet: dict) -> tuple[bool, str]:
         return False, (
             f"Edge {(bet.get('edge') or 0)*100:.1f}% below the {CASH_MIN_EDGE*100:.0f}% "
             f"cash minimum — too thin for real money at this stage of validation"
-        )
-    # D — paper-first
-    if not has_paper_counterpart(
-        bet.get("match_id") or "",
-        bet.get("market"),
-        bet.get("market_line"),
-        bet.get("outcome") or bet.get("bet_type"),
-    ):
-        return False, (
-            "Paper trade required first — log this exact (market, outcome) "
-            "as paper before placing real money"
         )
     return True, ""
 
@@ -241,7 +240,7 @@ def restriction_status() -> dict:
         "daily_loss_cap_usd": DAILY_CASH_LOSS_CAP_USD,
         "todays_cash_pnl": round(todays_cash_pnl(), 2),
         "daily_cap_hit": daily_loss_cap_hit(),
-        "paper_first_required": True,
+        "paper_first_required": False,  # spec D removed — see check_cash_eligibility
         "restricted_markets": sorted(RESTRICTED_CASH_MARKETS),
         "restricted_h2h_outcomes": sorted(RESTRICTED_CASH_OUTCOMES),
         "goal_market_progress": goal_market_paper_progress(),

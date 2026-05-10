@@ -221,7 +221,6 @@ def render(
         lines.append("  - H2H Draw: paper only")
         lines.append(f"  - Min cash edge: {rs['min_cash_edge']*100:.0f}%")
         lines.append(f"  - Daily cash loss cap: ${rs['daily_loss_cap_usd']:.0f}")
-        lines.append(f"  - Paper trade required first on every cash bet")
         if rs["daily_cap_hit"]:
             lines.append("")
             lines.append(f"  ⚠️ DAILY CAP HIT today (${rs['todays_cash_pnl']:+.0f}) — cash betting locked")
