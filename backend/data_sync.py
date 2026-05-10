@@ -542,7 +542,7 @@ async def sync_daily(league: str = "epl", force: bool = False) -> dict:
             if breakpoint_overall is not None:
                 match_params = dataclasses.replace(match_params, season_blend=trend_detection.BREAKPOINT_BLEND)
                 blend_overridden = True
-            blend_used = f"{int(match_params.season_blend*100)}/{int((1-match_params.season_blend)*100)}"
+            blend_used = f"{int(round(match_params.season_blend*100))}/{int(round((1-match_params.season_blend)*100))}"
             prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
 
             # Fix 2 — tactical suppressor adjustment. When either team is
