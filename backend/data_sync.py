@@ -36,7 +36,13 @@ LEAGUE_TO_API_FOOTBALL = {
     "world_cup": api_football.WORLD_CUP_LEAGUE_ID,
 }
 
-LOOKAHEAD_DAYS = 7
+# Per-league fixture-lookahead window. EPL's weekly cadence makes a short
+# horizon fine; tournaments with concentrated schedules need longer windows
+# so all fixtures (group + early knockout) land in a single sync. WC's 35
+# days covers the entire group stage in one pull and continues catching
+# knockouts as they're scheduled into the API.
+LOOKAHEAD_DAYS_BY_LEAGUE = {"epl": 7, "ucl": 14, "uel": 14, "world_cup": 35}
+LOOKAHEAD_DAYS_DEFAULT = 7
 RECENT_FORM_WINDOW = 10  # last 10 matches blended with season-long averages
 
 
@@ -252,14 +258,15 @@ def _is_knockout(round_label: str | None) -> bool:
     return any(k in r for k in ("knockout", "round of", "quarter", "semi", "final"))
 
 
-async def sync_daily(league: str = "epl", force: bool = False) -> dict:
+async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: int | None = None) -> dict:
     league_id = LEAGUE_TO_API_FOOTBALL.get(league)
     if league_id is None:
         return {"ok": False, "reason": f"unknown league: {league}"}
 
     today = datetime.now(timezone.utc).date()
     from_date = today.isoformat()
-    to_date = (today + timedelta(days=LOOKAHEAD_DAYS)).isoformat()
+    window = lookahead_days if lookahead_days is not None else LOOKAHEAD_DAYS_BY_LEAGUE.get(league, LOOKAHEAD_DAYS_DEFAULT)
+    to_date = (today + timedelta(days=window)).isoformat()
     season = _current_season(league)
 
     summary: dict = {

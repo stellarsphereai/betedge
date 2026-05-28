@@ -156,9 +156,10 @@ async def task_auto_calibration() -> dict:
 # ===========================================================================
 
 async def task_wc_data_prep() -> dict:
-    """Fetch all 64 WC fixtures from API-Football, pre-fetch 32 teams,
-    backtest WC 2018/2022. Defers itself before May 31; runs progressively
-    after that as fixtures become available."""
+    """Measure WC fixture/prediction load. Defers itself before May 31, and
+    defers (instead of FAILing) during a 7-day grace window after activation
+    so the daily sync has time to pull all 64 fixtures from API-Football
+    without the 6am watchdog escalating mid-load."""
     today = datetime.now(timezone.utc).date()
     cutoff = datetime(2026, 5, 31).date()
     if today < cutoff:
@@ -166,8 +167,6 @@ async def task_wc_data_prep() -> dict:
             "status": "DEFERRED",
             "summary": f"WC data prep activates {cutoff.isoformat()}; today is {today.isoformat()}",
         }
-    # Count loaded WC fixtures + teams. Implementation hook — actual fetch
-    # is delegated to data_sync.sync_daily('world_cup'), already cron'd at 03:00.
     with db() as conn:
         n_fixtures = conn.execute(
             "SELECT COUNT(*) AS n FROM fixtures WHERE league = 'world_cup'"
@@ -175,10 +174,27 @@ async def task_wc_data_prep() -> dict:
         n_preds = conn.execute(
             "SELECT COUNT(*) AS n FROM model_predictions WHERE league = 'world_cup'"
         ).fetchone()["n"]
-    pass_ = n_fixtures >= 64
+    # PASS once the full slate is loaded; defer (not FAIL) during the
+    # grace window or while the sync is still progressing toward the full
+    # 64. Only escalate to FAIL once we're past the grace window AND still
+    # short — at that point something is genuinely wrong with the sync.
+    GRACE_DAYS = 7
+    grace_end = cutoff + timedelta(days=GRACE_DAYS)
+    if n_fixtures >= 64:
+        return {
+            "status": "PASS",
+            "summary": f"WC fixtures loaded: {n_fixtures}/64, predictions: {n_preds}",
+            "n_fixtures": n_fixtures, "n_preds": n_preds,
+        }
+    if today <= grace_end:
+        return {
+            "status": "DEFERRED",
+            "summary": f"WC fixtures loading: {n_fixtures}/64 (grace window through {grace_end.isoformat()}); predictions: {n_preds}",
+            "n_fixtures": n_fixtures, "n_preds": n_preds,
+        }
     return {
-        "status": "PASS" if pass_ else "FAIL",
-        "summary": f"WC fixtures loaded: {n_fixtures}/64, predictions: {n_preds}",
+        "status": "FAIL",
+        "summary": f"WC fixtures still incomplete past grace window: {n_fixtures}/64; predictions: {n_preds}",
         "n_fixtures": n_fixtures, "n_preds": n_preds,
     }
 
