@@ -122,10 +122,23 @@ def adjust_xg(
 ) -> tuple[float, float]:
     """Apply opponent-strength adjustment to a single game's xG.
 
-    Direction: a high opponent_defense_rating means the opponent's defense
-    is BETTER than league average — scoring against them is more impressive,
-    so we multiply our xG_for upward. A low rating (weak defense) discounts.
-    Same logic mirrored on xG_against vs the opponent's attack rating.
+    Both perspectives normalize to "what this game would have looked like
+    against a league-average opponent."
+
+    xG_for: a high opponent_defense_rating means the opponent's defense is
+    BETTER than league average (less xG conceded). Scoring against them is
+    more impressive — multiply xG_for upward. Defense rating is built as
+    `league_avg_against / team_xg_against`, so multiplication gives the
+    right ratio (your scored xG × how much HARDER it was to score on this
+    opponent vs. average).
+
+    xG_against: a high opponent_attack_rating means the opponent's attack
+    is BETTER than league average (more xG generated). Conceding to them
+    is less bad — DIVIDE xG_against by their attack rating to scale the
+    defensive performance back to "vs average attack." (Multiplying here
+    would amplify in the wrong direction: it would make conceding to a
+    strong attack look WORSE than the raw number, which is the opposite
+    of normalization.)
 
     Returns (adjusted_xg_for, adjusted_xg_against). When ratings are missing
     (untracked opponent, missing data), returns the raw values unchanged.
@@ -140,7 +153,7 @@ def adjust_xg(
     od = _clamp(opponent_defense_rating)
     oa = _clamp(opponent_attack_rating)
     new_for = raw_xg_for * od if od is not None else raw_xg_for
-    new_against = raw_xg_against * oa if oa is not None else raw_xg_against
+    new_against = raw_xg_against / oa if oa is not None else raw_xg_against
     return new_for, new_against
 
 
