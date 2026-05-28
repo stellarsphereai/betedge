@@ -258,6 +258,20 @@ def _is_knockout(round_label: str | None) -> bool:
     return any(k in r for k in ("knockout", "round of", "quarter", "semi", "final"))
 
 
+def _is_neutral_venue_final(round_label: str | None, league: str) -> bool:
+    """UCL/UEL/WC finals (championship + 3rd-place) are at neutral venues —
+    the nominal home side gets no real home-field advantage there, so the
+    league's home_gamma multiplier should be overridden to 1.0 for these
+    fixtures. Semi-finals and quarter-finals stay two-legged with normal
+    home advantage and are excluded."""
+    if league not in ("ucl", "uel", "world_cup"):
+        return False
+    r = (round_label or "").lower()
+    if not r or "semi" in r or "quarter" in r or "round of" in r:
+        return False
+    return "final" in r
+
+
 async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: int | None = None) -> dict:
     league_id = LEAGUE_TO_API_FOOTBALL.get(league)
     if league_id is None:
@@ -621,6 +635,13 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             if breakpoint_overall is not None:
                 match_params = dataclasses.replace(match_params, season_blend=trend_detection.BREAKPOINT_BLEND)
                 blend_overridden = True
+            # Neutral-venue final override — UCL/UEL/WC championship and
+            # 3rd-place finals are at neutral venues. The league's
+            # home_gamma multiplier (1.25 for UCL, 1.20 for WC, etc.)
+            # would otherwise give the nominal "home" side an advantage
+            # they don't actually have. Override to 1.0 here.
+            if _is_neutral_venue_final(this_round, league):
+                match_params = dataclasses.replace(match_params, home_gamma=1.0)
             blend_used = f"{int(round(match_params.season_blend*100))}/{int(round((1-match_params.season_blend)*100))}"
             prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
 
