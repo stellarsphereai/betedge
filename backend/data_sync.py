@@ -381,21 +381,42 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                     grouped[home_id].append(fx)
                 if away_id in team_ids:
                     grouped[away_id].append(fx)
-            # Goal averages with Bayesian shrinkage toward an international
-            # baseline. Without shrinkage, small-sample teams produce
-            # collapsed Poisson predictions (e.g. Curaçao's 3-game CONCACAF
-            # sample said 0.33 xG-against, cross-multiplied to ~0.1 xG and
-            # the model gave Ecuador-Curaçao 80% draw). The baseline reflects
-            # typical international scoring; the weight ramps to 1.0 as the
-            # sample reaches FULL_WEIGHT_GAMES, so well-sampled teams get
-            # their own numbers and thin-sampled teams regress toward sanity.
-            INTL_BASELINE = 1.3  # goals per team per international match
+            # Goal averages for the fallback path. Three-step pipeline:
+            #   (1) compute per-source-league baseline goals/team/match
+            #   (2) rescale each team's raw avg from source-league units
+            #       to WC context (CONMEBOL ~1.0 g/team is normal there
+            #       but understates expected WC scoring; UEFA quals ~1.5
+            #       overshoots slightly)
+            #   (3) Bayesian shrinkage toward the international baseline
+            #       so thin-sample teams regress to sanity
+            #
+            # Without the rescale step, Ecuador's 0.78 goals/game CONMEBOL
+            # avg crosses through Dixon-Coles vs Curaçao to ~0.1 xG and
+            # the model gives 80% draw. With rescale to WC baseline, the
+            # same "below-average team in their qualifying region" gets
+            # mapped to a sensible international scoring rate.
+            INTL_BASELINE = 1.4  # goals per team per match in WC fixtures
             FULL_WEIGHT_GAMES = 10
+            league_goals: dict[int, list[int]] = defaultdict(list)
+            for fx in corpus_fixtures:
+                g = fx.get("goals") or {}
+                h, a = g.get("home"), g.get("away")
+                if h is None or a is None:
+                    continue
+                lg_id = (fx.get("league") or {}).get("id")
+                if lg_id is not None:
+                    league_goals[lg_id].extend([h, a])
+            league_baseline = {
+                lg: (sum(vals) / len(vals)) if vals else INTL_BASELINE
+                for lg, vals in league_goals.items()
+            }
+
             for tid in team_ids:
                 fxs = sorted(grouped.get(tid, []),
                              key=lambda f: f["fixture"]["date"], reverse=True)
                 team_recent[tid] = fxs[:RECENT_FORM_WINDOW]
                 gf, ga, ngames = 0, 0, 0
+                league_appearances: dict[int, int] = defaultdict(int)
                 for fx in fxs:
                     g = fx.get("goals") or {}
                     h, a = g.get("home"), g.get("away")
@@ -406,14 +427,30 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                     else:
                         gf += a; ga += h
                     ngames += 1
+                    lg_id = (fx.get("league") or {}).get("id")
+                    if lg_id is not None:
+                        league_appearances[lg_id] += 1
                 if ngames == 0:
                     continue
                 raw_for = gf / ngames
                 raw_against = ga / ngames
+                # Weighted source baseline across the source leagues this
+                # team actually played in. Defaults to INTL_BASELINE if a
+                # league's baseline is missing or zero.
+                total_app = sum(league_appearances.values()) or 1
+                src_baseline = sum(
+                    (league_baseline.get(lg) or INTL_BASELINE) * n
+                    for lg, n in league_appearances.items()
+                ) / total_app
+                if src_baseline <= 0:
+                    src_baseline = INTL_BASELINE
+                scale = INTL_BASELINE / src_baseline
+                rescaled_for = raw_for * scale
+                rescaled_against = raw_against * scale
                 w = min(ngames, FULL_WEIGHT_GAMES) / FULL_WEIGHT_GAMES
                 wc_goal_avg[tid] = (
-                    w * raw_for + (1 - w) * INTL_BASELINE,
-                    w * raw_against + (1 - w) * INTL_BASELINE,
+                    w * rescaled_for + (1 - w) * INTL_BASELINE,
+                    w * rescaled_against + (1 - w) * INTL_BASELINE,
                 )
         else:
             try:
