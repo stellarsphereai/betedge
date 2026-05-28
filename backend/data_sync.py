@@ -373,6 +373,44 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 summary["errors"].append(f"qualifier corpus blocked ({e})")
                 return summary
             stats_cache = corpus_stats
+            # Feed settled WC fixtures back into the team-form history so
+            # group-stage results influence knockout-stage predictions.
+            # The qualifier corpus alone is frozen at pre-tournament data;
+            # without this merge, Argentina's R16 prediction would not
+            # incorporate their group-stage performance. API-Football has
+            # full xG coverage for WC matches (the desert is qualifiers
+            # for non-UEFA regions), so settled WC games bring real signal.
+            with db() as conn:
+                settled_rows = conn.execute(
+                    "SELECT match_id FROM fixtures "
+                    "WHERE league='world_cup' AND result IS NOT NULL"
+                ).fetchall()
+            seen_fids = {fx["fixture"]["id"] for fx in corpus_fixtures}
+            for r in settled_rows:
+                mid = r["match_id"]
+                if not (mid and mid.startswith("af-")):
+                    continue
+                try:
+                    fid = int(mid[3:])
+                except ValueError:
+                    continue
+                if fid in seen_fids:
+                    continue
+                try:
+                    fx = await api_football.fetch_fixture(client, fid, force=False)
+                except Exception as e:
+                    summary["errors"].append(f"settled WC fetch {fid}: {e}")
+                    continue
+                if fx is None:
+                    continue
+                corpus_fixtures.append(fx)
+                seen_fids.add(fid)
+                try:
+                    stats_cache[fid] = await api_football.fixture_statistics(
+                        client, fid, force=False
+                    )
+                except api_football.PlanError as e:
+                    summary["errors"].append(f"settled WC stats {fid} blocked ({e})")
             grouped: dict[int, list[dict]] = defaultdict(list)
             for fx in corpus_fixtures:
                 home_id = fx["teams"]["home"]["id"]
