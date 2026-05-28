@@ -330,13 +330,24 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
         except api_football.PlanError as e:
             summary["errors"].append(f"injuries/scorers blocked ({e}); top_scorer_out=False")
 
-        # 3. Per-team last-N fixtures (paid-only `last` param)
+        # 3. Per-team last-N fixtures (paid-only `last` param).
+        # For club leagues we filter by league+season so cup ties against
+        # lower-division opposition don't inflate xG. For the World Cup
+        # the same filter is fatal: national teams haven't played any
+        # 2026 WC matches yet, so league=1+season=2026 returns zero
+        # recent fixtures for every participant and all predictions get
+        # skipped on the len<3 gate downstream. Drop the league filter
+        # for WC so we pull each team's last N matches across all
+        # competitions (qualifiers, friendlies, Nations League).
         team_ids = {fx["teams"]["home"]["id"] for fx in fixtures} | {fx["teams"]["away"]["id"] for fx in fixtures}
         team_recent: dict[int, list[dict]] = {}
+        recent_league = None if league == "world_cup" else league_id
+        recent_season = None if league == "world_cup" else season
         try:
             for tid in team_ids:
                 team_recent[tid] = await api_football.team_recent_fixtures(
-                    client, tid, last=RECENT_FORM_WINDOW, league=league_id, season=season,
+                    client, tid, last=RECENT_FORM_WINDOW,
+                    league=recent_league, season=recent_season,
                     force=force,
                 )
         except api_football.PlanError as e:
