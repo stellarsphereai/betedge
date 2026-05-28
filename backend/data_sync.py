@@ -587,26 +587,44 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             # WC fallback — API-Football only carries expected_goals for
             # UEFA WC qualifiers; CONMEBOL/AFC/CAF/CONCACAF/OFC return
             # 0% xG coverage. For sides whose xG history came back short,
-            # synthesize a flat xG arr from their qualifier-corpus goals
-            # average so the model has *something* to feed rather than
-            # skipping the entire fixture. European teams keep their
-            # real xG signal — the fallback only fires when arrays are
-            # empty/short.
+            # blend whatever real xG samples we do have with the
+            # qualifier-corpus goal average. As actual WC matches settle
+            # the team accumulates real xG samples, so the weight on real
+            # ramps up and the fallback recedes:
+            #   0 real samples → full fallback (pre-tournament / non-UEFA opener)
+            #   1 real sample  → 30% real / 70% fallback (after game 1)
+            #   2 real samples → 60% real / 40% fallback (after game 2)
+            #   3+ real samples → pure real xG, no fallback (R16 onward for non-UEFA)
+            # European teams hit the 3+ bucket immediately from qualifier
+            # xG and never see the blend or fallback.
             FALLBACK_REPLICATION = 5
-            if league == "world_cup" and len(home_xg_for) < 3:
-                avg = wc_goal_avg.get(home_id)
-                if avg is not None:
-                    home_xg_for = [avg[0]] * FALLBACK_REPLICATION
-                    home_xg_against = [avg[1]] * FALLBACK_REPLICATION
-                    home_xg_info["fallback_used"] = True
-                    home_xg_info["mode"] = "season_avg_goals_fallback"
-            if league == "world_cup" and len(away_xg_for) < 3:
-                avg = wc_goal_avg.get(away_id)
-                if avg is not None:
-                    away_xg_for = [avg[0]] * FALLBACK_REPLICATION
-                    away_xg_against = [avg[1]] * FALLBACK_REPLICATION
-                    away_xg_info["fallback_used"] = True
-                    away_xg_info["mode"] = "season_avg_goals_fallback"
+            WC_BLEND_WEIGHT = {0: 0.0, 1: 0.30, 2: 0.60}
+
+            def _wc_blend(xg_for, xg_against, avg, info):
+                n = len(xg_for)
+                if league != "world_cup" or n >= 3 or avg is None:
+                    return xg_for, xg_against
+                w = WC_BLEND_WEIGHT.get(n, 0.0)
+                mean_for = (sum(xg_for) / n) if n else 0.0
+                mean_against = (sum(xg_against) / n) if n else 0.0
+                blended_for = w * mean_for + (1 - w) * avg[0]
+                blended_against = w * mean_against + (1 - w) * avg[1]
+                info["fallback_used"] = True
+                info["mode"] = (
+                    "season_avg_goals_fallback" if n == 0
+                    else f"wc_blend_{n}sample_{int(w*100)}pct_real"
+                )
+                return (
+                    [blended_for] * FALLBACK_REPLICATION,
+                    [blended_against] * FALLBACK_REPLICATION,
+                )
+
+            home_xg_for, home_xg_against = _wc_blend(
+                home_xg_for, home_xg_against, wc_goal_avg.get(home_id), home_xg_info
+            )
+            away_xg_for, away_xg_against = _wc_blend(
+                away_xg_for, away_xg_against, wc_goal_avg.get(away_id), away_xg_info
+            )
             if len(home_xg_for) < 3 or len(away_xg_for) < 3:
                 summary["skipped_for_data"] += 1
                 continue
