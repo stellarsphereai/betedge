@@ -343,6 +343,13 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
         team_ids = {fx["teams"]["home"]["id"] for fx in fixtures} | {fx["teams"]["away"]["id"] for fx in fixtures}
         team_recent: dict[int, list[dict]] = {}
         stats_cache: dict[int, list[dict]] = {}
+        # WC-only: goals-based season averages computed from the qualifier
+        # corpus, used as a fallback xG signal for non-UEFA teams whose
+        # corpus fixtures don't carry expected_goals (CONMEBOL/AFC/CAF/
+        # CONCACAF/OFC qualifiers all return 0% xG coverage in API-Football).
+        # Empty {} for other leagues; the per-fixture loop only consults
+        # this when league == "world_cup".
+        wc_goal_avg: dict[int, tuple[float, float]] = {}
         if league == "world_cup":
             import qualifier_corpus
             from collections import defaultdict
@@ -364,6 +371,19 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 fxs = sorted(grouped.get(tid, []),
                              key=lambda f: f["fixture"]["date"], reverse=True)
                 team_recent[tid] = fxs[:RECENT_FORM_WINDOW]
+                gf, ga, ngames = 0, 0, 0
+                for fx in fxs:
+                    g = fx.get("goals") or {}
+                    h, a = g.get("home"), g.get("away")
+                    if h is None or a is None:
+                        continue
+                    if fx["teams"]["home"]["id"] == tid:
+                        gf += h; ga += a
+                    else:
+                        gf += a; ga += h
+                    ngames += 1
+                if ngames > 0:
+                    wc_goal_avg[tid] = (gf / ngames, ga / ngames)
         else:
             try:
                 for tid in team_ids:
@@ -458,6 +478,29 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 knockout_only_for_ucl=is_tournament_knockout,
                 opponent_ratings=ratings_snapshot,
             )
+            # WC fallback — API-Football only carries expected_goals for
+            # UEFA WC qualifiers; CONMEBOL/AFC/CAF/CONCACAF/OFC return
+            # 0% xG coverage. For sides whose xG history came back short,
+            # synthesize a flat xG arr from their qualifier-corpus goals
+            # average so the model has *something* to feed rather than
+            # skipping the entire fixture. European teams keep their
+            # real xG signal — the fallback only fires when arrays are
+            # empty/short.
+            FALLBACK_REPLICATION = 5
+            if league == "world_cup" and len(home_xg_for) < 3:
+                avg = wc_goal_avg.get(home_id)
+                if avg is not None:
+                    home_xg_for = [avg[0]] * FALLBACK_REPLICATION
+                    home_xg_against = [avg[1]] * FALLBACK_REPLICATION
+                    home_xg_info["fallback_used"] = True
+                    home_xg_info["mode"] = "season_avg_goals_fallback"
+            if league == "world_cup" and len(away_xg_for) < 3:
+                avg = wc_goal_avg.get(away_id)
+                if avg is not None:
+                    away_xg_for = [avg[0]] * FALLBACK_REPLICATION
+                    away_xg_against = [avg[1]] * FALLBACK_REPLICATION
+                    away_xg_info["fallback_used"] = True
+                    away_xg_info["mode"] = "season_avg_goals_fallback"
             if len(home_xg_for) < 3 or len(away_xg_for) < 3:
                 summary["skipped_for_data"] += 1
                 continue

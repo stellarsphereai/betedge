@@ -17,6 +17,7 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+import unicodedata
 from typing import Iterable
 
 import httpx
@@ -30,6 +31,13 @@ log = logging.getLogger("arb.qualifier_corpus")
 # WC 2026 qualifying spans 2023-2025 even though API-Football labels the
 # season "2026" for most confederations. Date range below is wide enough
 # to cover every campaign.
+#
+# Supplemental international tournaments are appended to fill data gaps
+# the WC qualifying corpus alone can't: hosts (USA/Canada/Mexico) skip
+# qualifying entirely, and UEFA Nations League provides additional
+# recent matches for UEFA teams. These contribute goal data for the
+# runtime season-average xG fallback even when stats lack expected_goals
+# (which API-Football carries only for UEFA in this corpus).
 QUALIFIER_LEAGUES: list[tuple[int, int, str]] = [
     (32, 2024, "UEFA"),                       # 2025-03-21 → 2026-03-31
     (34, 2026, "CONMEBOL"),                   # 2023-09-07 → 2025-09-09
@@ -38,6 +46,8 @@ QUALIFIER_LEAGUES: list[tuple[int, int, str]] = [
     (31, 2026, "CONCACAF"),                   # 2024-03-22 → 2025-11-19
     (33, 2026, "OFC"),                        # 2024-09-05 → 2025-03-24
     (37, 2026, "Inter-confederation playoffs"),  # 2026-03-26 → 2026-03-31
+    (22, 2025, "CONCACAF Gold Cup"),          # covers hosts USA/Canada/Mexico
+    (5,  2024, "UEFA Nations League"),        # extra UEFA-team coverage
 ]
 
 # Wide window that covers every WC 2026 qualifying campaign regardless
@@ -48,22 +58,24 @@ QUALIFIER_TO_DATE   = "2026-06-30"
 
 def _normalize(name: str) -> str:
     """Canonicalize a team name for matching. API-Football and FIFA disagree
-    on a handful of names — this map covers the noisy ones in our pool."""
-    s = (name or "").strip()
+    on a handful of names — this map covers the noisy ones in our pool.
+
+    NFC-normalizes so precomposed vs decomposed accented characters compare
+    equal (Côte d'Ivoire has bitten us with combining-circumflex variants),
+    and casefolds before alias lookup so capitalization differences across
+    confederation feeds resolve uniformly.
+    """
+    s = unicodedata.normalize("NFC", (name or "").strip()).casefold()
     aliases = {
-        "USA": "United States",
-        "United States Of America": "United States",
-        "Usa": "United States",
-        "Uae": "United Arab Emirates",
-        "South Korea": "Korea Republic",
-        "Korea Republic": "Korea Republic",
-        "Czech Republic": "Czechia",
-        "Czechia": "Czechia",
-        "Ivory Coast": "Côte D'ivoire",
-        "Côte D'ivoire": "Côte D'ivoire",
+        "usa": "united states",
+        "united states of america": "united states",
+        "uae": "united arab emirates",
+        "south korea": "korea republic",
+        "czech republic": "czechia",
+        "ivory coast": "côte d'ivoire",
+        "türkiye": "turkey",
     }
-    s = aliases.get(s, s)
-    return s.casefold()
+    return aliases.get(s, s)
 
 
 def _qualified_name_set() -> set[str]:
