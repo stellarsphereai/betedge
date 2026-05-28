@@ -322,14 +322,24 @@ async def run_model(payload: RunModelInput):
 
 
 @app.get("/predictions")
-async def get_predictions(limit: int = Query(50, ge=1, le=500)):
+async def get_predictions(
+    limit: int = Query(100, ge=1, le=500),
+    league: str | None = None,
+    upcoming_only: bool = Query(True, description="exclude fixtures whose kickoff has already passed"),
+):
+    """Most-upcoming fixtures first. Pass ?league=world_cup to filter."""
+    where, params = [], []
+    if league:
+        where.append("league = ?")
+        params.append(league.lower())
+    if upcoming_only:
+        where.append("kickoff_time >= datetime('now')")
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     with db() as conn:
         rows = conn.execute(
-            """
-            SELECT * FROM model_predictions
-            ORDER BY created_at DESC LIMIT ?
-            """,
-            (limit,),
+            f"SELECT * FROM model_predictions {where_sql} "
+            "ORDER BY kickoff_time ASC, created_at DESC LIMIT ?",
+            (*params, limit),
         ).fetchall()
     return {"count": len(rows), "predictions": [dict(r) for r in rows]}
 
