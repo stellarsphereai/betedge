@@ -381,6 +381,16 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                     grouped[home_id].append(fx)
                 if away_id in team_ids:
                     grouped[away_id].append(fx)
+            # Goal averages with Bayesian shrinkage toward an international
+            # baseline. Without shrinkage, small-sample teams produce
+            # collapsed Poisson predictions (e.g. Curaçao's 3-game CONCACAF
+            # sample said 0.33 xG-against, cross-multiplied to ~0.1 xG and
+            # the model gave Ecuador-Curaçao 80% draw). The baseline reflects
+            # typical international scoring; the weight ramps to 1.0 as the
+            # sample reaches FULL_WEIGHT_GAMES, so well-sampled teams get
+            # their own numbers and thin-sampled teams regress toward sanity.
+            INTL_BASELINE = 1.3  # goals per team per international match
+            FULL_WEIGHT_GAMES = 10
             for tid in team_ids:
                 fxs = sorted(grouped.get(tid, []),
                              key=lambda f: f["fixture"]["date"], reverse=True)
@@ -396,8 +406,15 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                     else:
                         gf += a; ga += h
                     ngames += 1
-                if ngames > 0:
-                    wc_goal_avg[tid] = (gf / ngames, ga / ngames)
+                if ngames == 0:
+                    continue
+                raw_for = gf / ngames
+                raw_against = ga / ngames
+                w = min(ngames, FULL_WEIGHT_GAMES) / FULL_WEIGHT_GAMES
+                wc_goal_avg[tid] = (
+                    w * raw_for + (1 - w) * INTL_BASELINE,
+                    w * raw_against + (1 - w) * INTL_BASELINE,
+                )
         else:
             try:
                 for tid in team_ids:
