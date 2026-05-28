@@ -330,42 +330,60 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
         except api_football.PlanError as e:
             summary["errors"].append(f"injuries/scorers blocked ({e}); top_scorer_out=False")
 
-        # 3. Per-team last-N fixtures (paid-only `last` param).
-        # For club leagues we filter by league+season so cup ties against
-        # lower-division opposition don't inflate xG. For the World Cup
-        # the same filter is fatal: national teams haven't played any
-        # 2026 WC matches yet, so league=1+season=2026 returns zero
-        # recent fixtures for every participant and all predictions get
-        # skipped on the len<3 gate downstream. Drop the league filter
-        # for WC so we pull each team's last N matches across all
-        # competitions (qualifiers, friendlies, Nations League).
+        # 3. Per-team last-N fixtures + their stats.
+        # Club leagues use API-Football's generic last-N-per-team lookup
+        # filtered by league+season so cup ties against lower-division
+        # opposition don't inflate xG.
+        # WC sources from the qualifier corpus instead — the per-team
+        # last-N lookup returns zero or mostly-untracked friendlies for
+        # most national teams, and the corpus is the data set the model
+        # was designed around (also what calibrate_engine grid-searched
+        # against). Single corpus call covers all 32 WC participants and
+        # populates both team_recent and stats_cache in one pass.
         team_ids = {fx["teams"]["home"]["id"] for fx in fixtures} | {fx["teams"]["away"]["id"] for fx in fixtures}
         team_recent: dict[int, list[dict]] = {}
-        recent_league = None if league == "world_cup" else league_id
-        recent_season = None if league == "world_cup" else season
-        try:
-            for tid in team_ids:
-                team_recent[tid] = await api_football.team_recent_fixtures(
-                    client, tid, last=RECENT_FORM_WINDOW,
-                    league=recent_league, season=recent_season,
-                    force=force,
-                )
-        except api_football.PlanError as e:
-            summary["errors"].append(f"team-recent blocked ({e})")
-            return summary
-
-        # 4. Stats per unique recent fixture (xG)
-        unique_fixture_ids: set[int] = set()
-        for recent in team_recent.values():
-            for rfx in recent:
-                unique_fixture_ids.add(rfx["fixture"]["id"])
-
         stats_cache: dict[int, list[dict]] = {}
-        for fid in unique_fixture_ids:
+        if league == "world_cup":
+            import qualifier_corpus
+            from collections import defaultdict
             try:
-                stats_cache[fid] = await api_football.fixture_statistics(client, fid, force=force)
+                corpus_fixtures, corpus_stats = await qualifier_corpus.load_full_corpus()
             except api_football.PlanError as e:
-                summary["errors"].append(f"stats for {fid} blocked ({e})")
+                summary["errors"].append(f"qualifier corpus blocked ({e})")
+                return summary
+            stats_cache = corpus_stats
+            grouped: dict[int, list[dict]] = defaultdict(list)
+            for fx in corpus_fixtures:
+                home_id = fx["teams"]["home"]["id"]
+                away_id = fx["teams"]["away"]["id"]
+                if home_id in team_ids:
+                    grouped[home_id].append(fx)
+                if away_id in team_ids:
+                    grouped[away_id].append(fx)
+            for tid in team_ids:
+                fxs = sorted(grouped.get(tid, []),
+                             key=lambda f: f["fixture"]["date"], reverse=True)
+                team_recent[tid] = fxs[:RECENT_FORM_WINDOW]
+        else:
+            try:
+                for tid in team_ids:
+                    team_recent[tid] = await api_football.team_recent_fixtures(
+                        client, tid, last=RECENT_FORM_WINDOW,
+                        league=league_id, season=season,
+                        force=force,
+                    )
+            except api_football.PlanError as e:
+                summary["errors"].append(f"team-recent blocked ({e})")
+                return summary
+            unique_fixture_ids: set[int] = set()
+            for recent in team_recent.values():
+                for rfx in recent:
+                    unique_fixture_ids.add(rfx["fixture"]["id"])
+            for fid in unique_fixture_ids:
+                try:
+                    stats_cache[fid] = await api_football.fixture_statistics(client, fid, force=force)
+                except api_football.PlanError as e:
+                    summary["errors"].append(f"stats for {fid} blocked ({e})")
 
         # 4b. Per-team season averages (goals for/against per match) — feed
         # the blend in model.team_strengths so a hot/cold 10-game stretch is
