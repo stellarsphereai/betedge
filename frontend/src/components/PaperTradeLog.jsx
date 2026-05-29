@@ -272,7 +272,7 @@ function ActionsCell({ bet, onDeleted, onModeChanged }) {
 }
 
 export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeChangeBet }) {
-  const [mode, setMode] = useState('paper')  // 'paper' | 'cash'
+  const [mode, setMode] = useState('cash')  // 'paper' | 'cash'
   const all = bets || []
   const paperRows = all.filter(b => b.is_paper)
   const cashRows = all.filter(b => !b.is_paper)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, Plus, Check, Loader2, ChevronDown, ChevronRight, Sparkles, DollarSign, X } from 'lucide-react'
+import { ExternalLink, Check, Loader2, ChevronDown, ChevronRight, Sparkles, DollarSign, X } from 'lucide-react'
 import ProbabilityBar from './ProbabilityBar'
 import MatchAnalysisPanel from './MatchAnalysisPanel'
 
@@ -395,18 +395,6 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                         }
                         return (
                           <span className="inline-flex gap-1">
-                            <button
-                              onClick={() => handleLog(b, 'paper')}
-                              disabled={blocked}
-                              title={blocked ? reason : `Log PAPER bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${
-                                blocked
-                                  ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
-                                  : 'bg-accent-soft border-accent/40 text-accent hover:bg-accent hover:text-white'
-                              }`}
-                            >
-                              <Plus size={10} /> Paper
-                            </button>
                             {(() => {
                               // Specs A-D — cash button is greyed when the
                               // backend's cash_eligible=false. The reason
