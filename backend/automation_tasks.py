@@ -266,6 +266,95 @@ async def task_system_health() -> dict:
     # 5. FastAPI process — we ARE the FastAPI process. If we're running, we're up.
     checks["service_alive"] = {"ok": True, "pid": os.getpid()}
 
+    # 6. Scheduler jobs — verify APScheduler is running and the expected
+    # cron jobs are all registered. Drives readiness item 2.3. Written
+    # directly to the checklist (not part of the system_health aggregate
+    # so a scheduler hiccup doesn't cascade into 'all 2.x items failed').
+    try:
+        import scheduler as _sched
+        st = _sched.status()
+        # Floor at the number of nightly automation tasks (9) — if fewer
+        # are registered, the scheduler is incomplete. The wider envelope
+        # of full prod has ~27 jobs (syncs, digest, weekly/monthly,
+        # nightly automation, alerts), but 9 is the must-have minimum.
+        MIN_JOBS = 9
+        jobs = st.get("jobs") or []
+        running = bool(st.get("running"))
+        sched_ok = running and len(jobs) >= MIN_JOBS
+        checks["scheduler_jobs"] = {
+            "ok": sched_ok, "running": running, "n_jobs": len(jobs),
+            "min_required": MIN_JOBS,
+        }
+    except Exception as e:
+        sched_ok = False
+        checks["scheduler_jobs"] = {"ok": False, "error": str(e)}
+
+    # 7. API keys — verify API-Football + Odds API are reachable and
+    # the keys are valid. Drives readiness item 2.4. Uses each provider's
+    # free probe endpoint (API-Football /status, Odds API /sports) so we
+    # don't burn quota. Direct httpx calls (not via api_football._get)
+    # to avoid the quota-counter increment.
+    api_key_checks: dict[str, dict] = {}
+    try:
+        import httpx
+        af_key = os.getenv("API_FOOTBALL_KEY", "")
+        odds_key = os.getenv("ODDS_API_KEY", "")
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            # API-Football /status — free; returns subscription info
+            if af_key:
+                try:
+                    r = await c.get(
+                        "https://v3.football.api-sports.io/status",
+                        headers={"x-apisports-key": af_key},
+                    )
+                    body = r.json() if r.status_code == 200 else {}
+                    has_resp = bool((body or {}).get("response"))
+                    api_key_checks["api_football"] = {
+                        "ok": r.status_code == 200 and has_resp,
+                        "status": r.status_code,
+                    }
+                except Exception as e:
+                    api_key_checks["api_football"] = {"ok": False, "error": str(e)}
+            else:
+                api_key_checks["api_football"] = {"ok": False, "error": "API_FOOTBALL_KEY not set"}
+            # Odds API /sports — free; doesn't decrement x-requests-remaining
+            if odds_key:
+                try:
+                    r = await c.get(
+                        "https://api.the-odds-api.com/v4/sports",
+                        params={"apiKey": odds_key},
+                    )
+                    api_key_checks["odds_api"] = {
+                        "ok": r.status_code == 200,
+                        "status": r.status_code,
+                    }
+                except Exception as e:
+                    api_key_checks["odds_api"] = {"ok": False, "error": str(e)}
+            else:
+                api_key_checks["odds_api"] = {"ok": False, "error": "ODDS_API_KEY not set"}
+        keys_ok = all(v.get("ok") for v in api_key_checks.values())
+        checks["api_keys"] = {"ok": keys_ok, **api_key_checks}
+    except Exception as e:
+        keys_ok = False
+        checks["api_keys"] = {"ok": False, "error": str(e)}
+
+    # Persist 2.3 and 2.4 directly to the readiness checklist. Aggregate
+    # 2.1/2.2/2.5/2.6/2.7 still ride task_readiness_score's PASS/FAIL
+    # mapping; these two are independent so a scheduler hiccup or API
+    # outage doesn't cascade.
+    try:
+        with db() as conn:
+            conn.execute(
+                "UPDATE wc_readiness_checklist SET status=?, last_checked=datetime('now') WHERE item_id='2.3'",
+                ("pass" if sched_ok else "fail",),
+            )
+            conn.execute(
+                "UPDATE wc_readiness_checklist SET status=?, last_checked=datetime('now') WHERE item_id='2.4'",
+                ("pass" if keys_ok else "fail",),
+            )
+    except Exception:
+        log.exception("system_health: persisting 2.3/2.4 readiness failed")
+
     overall = all(c.get("ok") for c in checks.values())
     fail_summary = ", ".join(k for k, v in checks.items() if not v.get("ok"))
     return {
