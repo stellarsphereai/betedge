@@ -22,6 +22,7 @@ once the prerequisites are met (a date crossing, fixtures loaded, etc.).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -317,11 +318,13 @@ async def task_feature_verification() -> dict:
         import anomaly
         flags = anomaly.detect_edge_anomalies(
             {"edge": 0.50, "model_prob": 0.95, "decimal_odds": 2.00,
-             "outcome": "home", "match_id": "smoke"},
+             "outcome": "home", "match_id": "smoke",
+             "home_team": "H", "away_team": "A",
+             "true_implied_prob": 0.45, "book": "FanDuel"},
             league="epl",
         )
-        assert isinstance(flags, list)
-        results["3.2"] = (True, f"{len(flags)} flag(s) on synthetic 50%-edge bet")
+        assert isinstance(flags, list) and len(flags) >= 1, "expected ≥1 flag on 50%-edge bet"
+        results["3.2"] = (True, f"{len(flags)} flag(s) on synthetic 50%-edge bet: {flags[0].anomaly_type}")
     except Exception as e:
         results["3.2"] = (False, f"{type(e).__name__}: {e}")
 
@@ -348,13 +351,26 @@ async def task_feature_verification() -> dict:
     # 3.5 Top-3 grid — /best-bets endpoint returns the expected envelope.
     # Self-call via httpx on localhost; works inside the same uvicorn
     # event loop because httpx-async multiplexes through asyncio. Other
-    # scheduler jobs use the same pattern.
+    # scheduler jobs use the same pattern. Brief retry handles the race
+    # where this task is invoked seconds after a service restart and
+    # uvicorn hasn't bound the port yet.
     try:
         import httpx
-        async with httpx.AsyncClient(base_url="http://127.0.0.1:8002", timeout=10.0) as c:
-            r = await c.get("/best-bets?limit=3&kickoff_within_hours=336")
-        body = r.json()
-        assert r.status_code == 200, f"HTTP {r.status_code}"
+        last_err: Exception | None = None
+        body = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(base_url="http://127.0.0.1:8002", timeout=10.0) as c:
+                    r = await c.get("/best-bets?limit=3&kickoff_within_hours=336")
+                if r.status_code == 200:
+                    body = r.json()
+                    break
+                last_err = RuntimeError(f"HTTP {r.status_code}")
+            except Exception as e:
+                last_err = e
+            await asyncio.sleep(1.0)
+        if body is None:
+            raise last_err or RuntimeError("unknown")
         assert "bets" in body and "monitoring" in body and "count_returned" in body
         results["3.5"] = (True,
             f"endpoint OK, returned={body.get('count_returned')}, monitoring={body.get('count_monitoring')}")
