@@ -267,24 +267,39 @@ async def task_system_health() -> dict:
     checks["service_alive"] = {"ok": True, "pid": os.getpid()}
 
     # 6. Scheduler jobs — verify APScheduler is running and the expected
-    # cron jobs are all registered. Drives readiness item 2.3. Written
-    # directly to the checklist (not part of the system_health aggregate
-    # so a scheduler hiccup doesn't cascade into 'all 2.x items failed').
+    # cron jobs are registered. Drives readiness item 2.3. Polled via the
+    # /scheduler/status HTTP endpoint so any caller (including standalone
+    # subprocess invocations like a verification run) sees the actual
+    # uvicorn-process scheduler state, not a freshly-imported-but-never
+    # -started scheduler in the caller's process. Floor at 9 jobs — the
+    # must-have nightly automation tasks; full prod has ~27.
     try:
-        import scheduler as _sched
-        st = _sched.status()
-        # Floor at the number of nightly automation tasks (9) — if fewer
-        # are registered, the scheduler is incomplete. The wider envelope
-        # of full prod has ~27 jobs (syncs, digest, weekly/monthly,
-        # nightly automation, alerts), but 9 is the must-have minimum.
+        import httpx
         MIN_JOBS = 9
-        jobs = st.get("jobs") or []
-        running = bool(st.get("running"))
-        sched_ok = running and len(jobs) >= MIN_JOBS
-        checks["scheduler_jobs"] = {
-            "ok": sched_ok, "running": running, "n_jobs": len(jobs),
-            "min_required": MIN_JOBS,
-        }
+        sched_ok = False
+        sched_detail: dict = {}
+        last_err: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(base_url="http://127.0.0.1:8002", timeout=10.0) as c:
+                    r = await c.get("/scheduler/status")
+                if r.status_code == 200:
+                    body = r.json() or {}
+                    jobs = body.get("jobs") or []
+                    running = bool(body.get("running"))
+                    sched_ok = running and len(jobs) >= MIN_JOBS
+                    sched_detail = {
+                        "running": running, "n_jobs": len(jobs), "min_required": MIN_JOBS,
+                    }
+                    break
+                last_err = RuntimeError(f"HTTP {r.status_code}")
+            except Exception as e:
+                last_err = e
+            await asyncio.sleep(1.0)
+        if sched_detail:
+            checks["scheduler_jobs"] = {"ok": sched_ok, **sched_detail}
+        else:
+            checks["scheduler_jobs"] = {"ok": False, "error": str(last_err) if last_err else "unknown"}
     except Exception as e:
         sched_ok = False
         checks["scheduler_jobs"] = {"ok": False, "error": str(e)}
