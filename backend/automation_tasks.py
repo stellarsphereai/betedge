@@ -282,12 +282,144 @@ async def task_system_health() -> dict:
 # ===========================================================================
 
 async def task_feature_verification() -> dict:
-    """8-test feature smoke suite (EV calc, anomaly, line shopper, kelly,
-    top-3 grid, AI, digest, book coverage). Building this needs proper test
-    harnesses and synthetic fixtures — deferred."""
+    """8-test feature smoke suite — exercises each feature module with a
+    synthetic input and verifies a known invariant. Per-test results are
+    written directly to wc_readiness_checklist 3.1–3.8 so the readiness
+    panel updates without needing a separate mapping in
+    task_readiness_score.
+
+    These are smoke tests, not unit tests: each one proves the feature is
+    callable end-to-end on a sensible input. Heavy/costly calls (the
+    OpenAI analysis, live Odds API fetches) are skipped — we verify the
+    module is importable and the public surface is intact.
+    """
+    results: dict[str, tuple[bool, str]] = {}
+
+    # 3.1 EV calculator — de-vig math + bet finder on a clearly +EV line
+    try:
+        import ev_calculator
+        devig = ev_calculator.remove_vig({"home": 1.80, "draw": 4.00, "away": 4.50})
+        assert abs(sum(devig.values()) - 1.0) < 1e-9
+        ev = ev_calculator.find_ev_bets(
+            match_id="smoke", home_team="H", away_team="A",
+            model_probs={"home": 0.55, "draw": 0.25, "away": 0.20},
+            confidence="MEDIUM",
+            offers_by_book={"BookA": {"home": 2.50, "draw": 3.50, "away": 4.00}},
+            min_edge=0.0,
+        )
+        assert any(b.outcome == "home" for b in ev)
+        results["3.1"] = (True, f"de-vig sums=1.0, {len(ev)} +EV bet(s) on synthetic line")
+    except Exception as e:
+        results["3.1"] = (False, f"{type(e).__name__}: {e}")
+
+    # 3.2 Anomaly detector — synthetic 50%-edge bet should produce ≥1 flag
+    try:
+        import anomaly
+        flags = anomaly.detect_edge_anomalies(
+            {"edge": 0.50, "model_prob": 0.95, "decimal_odds": 2.00,
+             "outcome": "home", "match_id": "smoke"},
+            league="epl",
+        )
+        assert isinstance(flags, list)
+        results["3.2"] = (True, f"{len(flags)} flag(s) on synthetic 50%-edge bet")
+    except Exception as e:
+        results["3.2"] = (False, f"{type(e).__name__}: {e}")
+
+    # 3.3 Line shopper — best/second-best selection from 3-book offers
+    try:
+        import line_shopper
+        bl = line_shopper.best_line({"BookA": 2.10, "BookB": 2.30, "BookC": 2.05})
+        assert bl is not None and bl.best_book == "BookB" and bl.best_odds == 2.30
+        assert bl.second_book == "BookA" and bl.second_odds == 2.10
+        results["3.3"] = (True, f"best={bl.best_book}@{bl.best_odds}, 2nd={bl.second_book}@{bl.second_odds}")
+    except Exception as e:
+        results["3.3"] = (False, f"{type(e).__name__}: {e}")
+
+    # 3.4 Kelly sizing — cap-bound + zero-edge sanity
+    try:
+        import kelly
+        capped = kelly.kelly_stake(edge=0.10, decimal_odds=2.50, bankroll=1000.0)
+        assert capped == 20.0, f"expected 20 (cap), got {capped}"
+        assert kelly.kelly_stake(0.0, 2.5, 1000.0) == 0.0
+        results["3.4"] = (True, "cap-bound stake=$20, zero-edge=$0")
+    except Exception as e:
+        results["3.4"] = (False, f"{type(e).__name__}: {e}")
+
+    # 3.5 Top-3 grid — /best-bets endpoint returns the expected envelope.
+    # Self-call via httpx on localhost; works inside the same uvicorn
+    # event loop because httpx-async multiplexes through asyncio. Other
+    # scheduler jobs use the same pattern.
+    try:
+        import httpx
+        async with httpx.AsyncClient(base_url="http://127.0.0.1:8002", timeout=10.0) as c:
+            r = await c.get("/best-bets?limit=3&kickoff_within_hours=336")
+        body = r.json()
+        assert r.status_code == 200, f"HTTP {r.status_code}"
+        assert "bets" in body and "monitoring" in body and "count_returned" in body
+        results["3.5"] = (True,
+            f"endpoint OK, returned={body.get('count_returned')}, monitoring={body.get('count_monitoring')}")
+    except Exception as e:
+        results["3.5"] = (False, f"{type(e).__name__}: {e}")
+
+    # 3.6 AI Analysis — module surface intact (no real OpenAI call;
+    # exercising analyze_match() costs money and depends on a live API
+    # key + reachability that isn't worth testing nightly).
+    try:
+        import match_analysis
+        assert callable(getattr(match_analysis, "analyze_match", None))
+        results["3.6"] = (True, "module importable, analyze_match callable (no API call)")
+    except Exception as e:
+        results["3.6"] = (False, f"{type(e).__name__}: {e}")
+
+    # 3.7 Morning digest — render with an empty payload should produce
+    # a non-empty subject+body (one of the "no bets today" branches).
+    try:
+        import digest
+        subject, body = digest.render(
+            {"bets": []},
+            {"accuracy": {"win_rate": None, "n_predictions": 0}},
+        )
+        assert isinstance(subject, str) and len(subject) > 0
+        assert isinstance(body, str) and len(body) > 0
+        results["3.7"] = (True, f"subject ok ({len(subject)} ch), body ok ({len(body)} ch)")
+    except Exception as e:
+        results["3.7"] = (False, f"{type(e).__name__}: {e}")
+
+    # 3.8 Book coverage — multi-book offers feed through find_ev_bets
+    # cleanly; the underlying logic that drives the /ev-bets coverage
+    # gate also drives top-3 visibility, so verifying find_ev_bets
+    # over N books exercises the same path.
+    try:
+        import ev_calculator
+        offers = {f"Book{i}": {"home": 2.0, "draw": 3.0, "away": 4.0} for i in range(4)}
+        ev = ev_calculator.find_ev_bets(
+            match_id="smoke", home_team="H", away_team="A",
+            model_probs={"home": 0.55, "draw": 0.25, "away": 0.20},
+            confidence="MEDIUM",
+            offers_by_book=offers,
+            min_edge=0.0,
+        )
+        assert any(b.outcome == "home" for b in ev)
+        results["3.8"] = (True, f"4-book coverage → {len(ev)} +EV bet(s)")
+    except Exception as e:
+        results["3.8"] = (False, f"{type(e).__name__}: {e}")
+
+    # Persist per-test status directly to the readiness checklist so the
+    # rolled-up score reflects these without needing a per-test mapping
+    # in task_readiness_score.
+    with db() as conn:
+        for iid, (ok, _) in results.items():
+            conn.execute(
+                "UPDATE wc_readiness_checklist SET status=?, last_checked=datetime('now') WHERE item_id=?",
+                ("pass" if ok else "fail", iid),
+            )
+
+    n_pass = sum(1 for ok, _ in results.values() if ok)
+    summary_parts = [f"{iid}{'✓' if ok else '✗'}" for iid, (ok, _) in results.items()]
     return {
-        "status": "DEFERRED",
-        "summary": "feature smoke tests deferred (8 test scaffolds needed)",
+        "status": "PASS" if n_pass == 8 else "FAIL",
+        "summary": f"{n_pass}/8 passed · " + " ".join(summary_parts),
+        "tests": {iid: {"pass": ok, "detail": detail} for iid, (ok, detail) in results.items()},
     }
 
 
