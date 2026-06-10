@@ -669,7 +669,7 @@ async def get_ev_bets(
             # ships to the dashboard. Persisted to anomaly_log so the digest
             # excluder + Anomalies tab can read them.
             bet_flags: list[anomaly.Anomaly] = []
-            bet_flags += anomaly.detect_edge_anomalies(row, league=league)
+            bet_flags += anomaly.detect_edge_anomalies(row, league=league, suppress_phantom=early_window)
             bet_flags += anomaly.detect_sharp_divergence(row, match_consensus=None, league=league)
             bet_flags += anomaly.detect_market_consensus_divergence(row, consensus_prob, league=league)
             anomaly_excluded = any(f.excludes_bet for f in bet_flags)

@@ -74,10 +74,19 @@ class Anomaly:
 # ---- per-bet detectors ----------------------------------------------------
 
 
-def detect_edge_anomalies(bet: dict, league: str | None = None) -> list[Anomaly]:
+def detect_edge_anomalies(
+    bet: dict,
+    league: str | None = None,
+    suppress_phantom: bool = False,
+) -> list[Anomaly]:
     """Anomalies 1a + 1b. Inspects the bet's edge against the league's edge
     threshold (from league_config) for sharp books, plus the cross-league
-    phantom threshold of 25%."""
+    phantom threshold of 25%.
+
+    suppress_phantom=True skips the PHANTOM_EDGE check — used during the
+    WC early-window when the corpus is too thin for the 25% threshold to
+    be meaningful (the model overshoots on totals/BTTS with limited data
+    and would otherwise exclude every early bet)."""
     out: list[Anomaly] = []
     edge = bet.get("edge")
     if edge is None:
@@ -94,7 +103,7 @@ def detect_edge_anomalies(bet: dict, league: str | None = None) -> list[Anomaly]
     )
 
     outcome = bet.get("outcome")
-    if edge > EDGE_PHANTOM_THRESHOLD:
+    if edge > EDGE_PHANTOM_THRESHOLD and not suppress_phantom:
         out.append(Anomaly(
             anomaly_type="PHANTOM_EDGE",
             description=(
