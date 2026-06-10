@@ -50,6 +50,7 @@ export const api = {
     }
     return r.json()
   },
+  setBookBalance: (bookKey, amount) => post(`/book-balances/${bookKey}`, { amount }),
   sendDigest: () => post('/send-digest'),
   digestPreview: () => get('/digest-preview'),
   bestBets: ({ league = 'all', limit = 3 } = {}) => {

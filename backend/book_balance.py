@@ -118,6 +118,34 @@ def get_balance(book_key: str | None) -> float | None:
     return float(row["balance_usd"]) if row else None
 
 
+def set_balance(book_key: str, amount: float) -> dict:
+    """Operator override — set a tracked book's balance to an exact value
+    (and seed initial_balance_usd if the row is missing). Used by the UI
+    inline editor so the dashboard can fund books without a redeploy."""
+    if book_key not in {k for k, _, _ in BOOKS}:
+        raise ValueError(f"untracked book_key: {book_key!r}")
+    if amount < 0:
+        raise ValueError("balance cannot be negative")
+    display = next(dn for k, dn, _ in BOOKS if k == book_key)
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO book_balance (book_key, display_name, balance_usd, initial_balance_usd, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(book_key) DO UPDATE SET
+                balance_usd = excluded.balance_usd,
+                updated_at  = datetime('now')
+            """,
+            (book_key, display, amount, amount),
+        )
+        row = conn.execute(
+            "SELECT book_key, display_name, balance_usd, initial_balance_usd, updated_at "
+            "FROM book_balance WHERE book_key = ?",
+            (book_key,),
+        ).fetchone()
+    return dict(row)
+
+
 def apply_settled_bet(book_name: str | None, profit: float, *, is_paper: bool) -> dict | None:
     """Apply a settled bet's signed profit to its book's balance.
 

@@ -1491,6 +1491,20 @@ async def get_best_bets(
 # --- Book balances -----------------------------------------------------------
 
 
+@app.post("/book-balances/{book_key}")
+async def book_balance_set(book_key: str, payload: dict):
+    """Operator override — set a tracked book's balance. Body: {"amount": 200}."""
+    try:
+        amount = float(payload.get("amount"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "amount must be a number")
+    try:
+        row = book_balance.set_balance(book_key.lower(), amount)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return row
+
+
 @app.get("/book-balances")
 async def book_balances():
     """Per-book bankroll snapshot. Includes total + warning level per book
