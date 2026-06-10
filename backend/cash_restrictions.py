@@ -35,8 +35,20 @@ def _today_iso() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
-def is_market_restricted(market: Optional[str], outcome: Optional[str]) -> bool:
-    """Spec A — BTTS/Totals always blocked on cash; H2H Draw also blocked."""
+def is_market_restricted(
+    market: Optional[str],
+    outcome: Optional[str],
+    league: Optional[str] = None,
+) -> bool:
+    """Spec A — BTTS/Totals always blocked on cash; H2H Draw also blocked.
+
+    World Cup bypass: WC is configured as real-money mode from day one
+    (no paper-bet pipeline accumulates), so the "wait for goal-market
+    paper win rate ≥ 50%" unlock criteria would never trigger. The
+    user explicitly opted into real-money WC play, so don't paternalise
+    them out of the goal markets the model is actually pricing."""
+    if (league or "").lower() == "world_cup":
+        return False
     m = (market or "h2h").lower()
     o = (outcome or "").lower()
     if m in RESTRICTED_CASH_MARKETS:
@@ -180,8 +192,12 @@ def check_cash_eligibility(bet: dict) -> tuple[bool, str]:
             f"Daily loss cap reached (${pnl:+.0f} of -${DAILY_CASH_LOSS_CAP_USD:.0f}) — "
             f"real money betting resumes tomorrow"
         )
-    # A — restricted markets
-    if is_market_restricted(bet.get("market"), bet.get("outcome") or bet.get("bet_type")):
+    # A — restricted markets (WC bypass per is_market_restricted)
+    if is_market_restricted(
+        bet.get("market"),
+        bet.get("outcome") or bet.get("bet_type"),
+        league=bet.get("league"),
+    ):
         return False, (
             "Goal markets (BTTS / Totals) and H2H Draw blocked on cash until "
             "model is calibrated on these markets — paper trade only"

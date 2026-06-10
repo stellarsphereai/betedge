@@ -937,12 +937,21 @@ async def create_bet(payload: BetInput):
         # Specs A-D — gate cash bets through the restriction layer.
         # Paper bets are always allowed (the whole point of paper-first
         # is to make sure paper logging is frictionless).
+        # Look up league from the prediction so WC bypasses the goal-market
+        # gate (see cash_restrictions.is_market_restricted).
+        with db() as conn:
+            _lg_row = conn.execute(
+                "SELECT league FROM model_predictions WHERE match_id = ?",
+                (payload.match_id,),
+            ).fetchone()
+        _bet_league = (_lg_row["league"] if _lg_row else LEAGUE_MODE)
         allowed, reason = cash_restrictions.check_cash_eligibility({
             "match_id":    payload.match_id,
             "market":      payload.market,
             "market_line": payload.market_line,
             "outcome":     payload.bet_type,
             "edge":        payload.edge_at_placement,
+            "league":      _bet_league,
         })
         if not allowed:
             raise HTTPException(403, reason)
