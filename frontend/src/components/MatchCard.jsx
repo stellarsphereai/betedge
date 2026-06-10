@@ -319,7 +319,7 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
               <th className="text-right">Edge</th>
               <th className="text-right">Timing</th>
               <th className="text-right">Stake</th>
-              {league !== 'world_cup' && <th className="text-center w-32">Log</th>}
+              <th className="text-center w-32">Log</th>
             </tr>
           </thead>
           <tbody>
@@ -348,12 +348,12 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                     </span>
                   </td>
                   <td className="text-right tabular-nums">{fmtMoney(b.stake)}</td>
-                  {league !== 'world_cup' && (
-                    <td className="text-center">
+                  <td className="text-center">
                       {(() => {
                         // Disable both buttons when stake resolved to $0 —
                         // usually a PHANTOM_EDGE exclusion or sub-$5 Kelly.
                         const blocked = !b.actionable || !b.stake || b.stake <= 0
+                        const showPaper = league !== 'world_cup'
                         const reason = b.lockout_reason
                           || (b.anomaly_flags?.find(f => f.excludes_bet)?.description)
                           || (b.stake <= 0 ? 'Stake is $0 — bet excluded from logging' : '')
@@ -395,18 +395,20 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                         }
                         return (
                           <span className="inline-flex gap-1">
-                            <button
-                              onClick={() => handleLog(b, 'paper')}
-                              disabled={blocked}
-                              title={blocked ? reason : `Log PAPER bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${
-                                blocked
-                                  ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
-                                  : 'bg-accent-soft border-accent/40 text-accent hover:bg-accent hover:text-white'
-                              }`}
-                            >
-                              <Plus size={10} /> Paper
-                            </button>
+                            {showPaper && (
+                              <button
+                                onClick={() => handleLog(b, 'paper')}
+                                disabled={blocked}
+                                title={blocked ? reason : `Log PAPER bet — $${b.stake?.toFixed(0)} on ${b.best_book ?? b.book}`}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${
+                                  blocked
+                                    ? 'bg-ink-900 border-ink-800 text-slate-600 cursor-not-allowed'
+                                    : 'bg-accent-soft border-accent/40 text-accent hover:bg-accent hover:text-white'
+                                }`}
+                              >
+                                <Plus size={10} /> Paper
+                              </button>
+                            )}
                             {(() => {
                               // Specs A-D — cash button is greyed when the
                               // backend's cash_eligible=false. The reason
@@ -436,7 +438,6 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                         )
                       })()}
                     </td>
-                  )}
                 </tr>
               )
             })}
