@@ -76,6 +76,12 @@ WC_MAX_STAKE_PCT = float(os.getenv("WC_MAX_STAKE_PCT", "0.005"))
 WC_HIGH_CONFIDENCE_ONLY = os.getenv("WC_HIGH_CONFIDENCE_ONLY", "true").strip().lower() == "true"
 WC_REQUIRE_MARKET_AGREEMENT = os.getenv("WC_REQUIRE_MARKET_AGREEMENT", "true").strip().lower() == "true"
 WC_DAILY_LOSS_CAP_PCT = float(os.getenv("WC_DAILY_LOSS_CAP_PCT", "0.02"))
+# Early-tournament window: relax the high-confidence gate for each team's
+# first WC_EARLY_GAMES group-stage matches (no in-tournament data exists yet,
+# so the corpus can't produce HIGH confidence). Stakes are scaled by
+# WC_EARLY_STAKE_MULT to compensate for the looser gate.
+WC_EARLY_GAMES = int(os.getenv("WC_EARLY_GAMES", "2"))
+WC_EARLY_STAKE_MULT = float(os.getenv("WC_EARLY_STAKE_MULT", "0.5"))
 
 LEAGUE_TO_SPORT_KEY = {
     "epl": "soccer_epl",
@@ -105,6 +111,25 @@ def _league_risk_config(league: str, base_min_edge: float) -> dict:
         "daily_loss_cap_pct": None,
         "real_money": False,
     }
+
+
+def _wc_matches_played(team_name: str) -> int:
+    """Count completed WC group-stage fixtures the team has played. Used by
+    the early-tournament gate — first WC_EARLY_GAMES matches per team bypass
+    the HIGH-confidence requirement (at reduced stake)."""
+    key = team_aliases.normalize_key(team_name)
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT home_team, away_team FROM fixtures
+            WHERE league = 'world_cup' AND result IS NOT NULL
+            """,
+        ).fetchall()
+    return sum(
+        1 for r in rows
+        if team_aliases.normalize_key(r["home_team"]) == key
+        or team_aliases.normalize_key(r["away_team"]) == key
+    )
 
 
 def _wc_loss_today() -> float:
@@ -491,8 +516,20 @@ async def get_ev_bets(
 
         # WC: only HIGH-confidence predictions clear the gate (the corpus is
         # too sparse + structurally different to bet real money on MED/LOW).
+        # Exception: each team's first WC_EARLY_GAMES group-stage matches —
+        # no in-tournament data exists yet, so HIGH is unreachable. Those
+        # bypass the gate but get a stake multiplier downstream.
+        early_window = False
         if risk["high_confidence_only"] and (p["confidence"] or "").upper() != "HIGH":
-            continue
+            if league == "world_cup":
+                home_played = _wc_matches_played(p["home_team"])
+                away_played = _wc_matches_played(p["away_team"])
+                if home_played < WC_EARLY_GAMES or away_played < WC_EARLY_GAMES:
+                    early_window = True
+                else:
+                    continue
+            else:
+                continue
 
         markets = odds_client.parse_all_markets(match)
 
@@ -569,7 +606,12 @@ async def get_ev_bets(
             book_coverage = len(outcome_offers)
             min_coverage = MIN_BOOK_COVERAGE.get((b.market or "h2h").lower(), 4)
             coverage_below_min = book_coverage < min_coverage
-            kelly_stake_full = kelly.kelly_stake(b.edge, b.decimal_odds, bankroll, risk["max_stake_pct"])
+            stake_cap_pct = risk["max_stake_pct"]
+            min_stake = 5.0
+            if early_window:
+                stake_cap_pct *= WC_EARLY_STAKE_MULT
+                min_stake = 1.0  # let the reduced cap surface a $1-$4 stake instead of zeroing it
+            kelly_stake_full = kelly.kelly_stake(b.edge, b.decimal_odds, bankroll, stake_cap_pct, min_stake)
             # Cap by per-book balance for the recommended book. If the book
             # isn't tracked (e.g. Caesars/BetRivers), available is None and
             # we skip the cap. Stake-reduced bets carry a flag the UI shows.
@@ -618,6 +660,7 @@ async def get_ev_bets(
                 "book_coverage": book_coverage,
                 "min_book_coverage": min_coverage,
                 "coverage_below_min": coverage_below_min,
+                "wc_early_window": early_window,
             }
 
             # Anomaly detection: edge thresholds + sharp-book divergence. Each

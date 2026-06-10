@@ -13,11 +13,12 @@ def kelly_stake(
     decimal_odds: float,
     bankroll: float,
     max_stake_pct: float = 0.02,
+    min_stake: float = MIN_STAKE,
 ) -> float:
     if edge <= 0 or decimal_odds <= 1.0 or bankroll <= 0:
         return 0.0
     raw = (edge * bankroll) / decimal_odds
     capped = min(raw, bankroll * max_stake_pct)
-    if capped < MIN_STAKE:
+    if capped < min_stake:
         return 0.0
     return float(round(capped))
