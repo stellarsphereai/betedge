@@ -52,7 +52,7 @@ export default function App() {
     try {
       const [s, e, p, b, ts, bt, an, mh, rs] = await Promise.all([
         api.stats(),
-        api.evBets(10000, 0.03, leagueRef.current, { force }),
+        api.evBets(5000, 0.03, leagueRef.current, { force }),
         api.predictions(50),
         api.bets(200),
         api.timeseries(),
