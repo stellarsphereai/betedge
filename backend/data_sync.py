@@ -355,6 +355,13 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
         # against). Single corpus call covers all 32 WC participants and
         # populates both team_recent and stats_cache in one pass.
         team_ids = {fx["teams"]["home"]["id"] for fx in fixtures} | {fx["teams"]["away"]["id"] for fx in fixtures}
+        # Build team_names early — needed by the WC confederation-strength
+        # discount (step 4 of the fallback pipeline) before season_avg runs.
+        team_names: dict[int, str] = {}
+        for fx in fixtures:
+            for side in ("home", "away"):
+                t = fx["teams"][side]
+                team_names[t["id"]] = team_aliases.canonical(t["name"])
         team_recent: dict[int, list[dict]] = {}
         stats_cache: dict[int, list[dict]] = {}
         # WC-only: goals-based season averages computed from the qualifier
@@ -569,11 +576,6 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
         # the blend in model.team_strengths so a hot/cold 10-game stretch is
         # tempered by the team's full-season baseline.
         season_avg: dict[int, tuple[float | None, float | None]] = {}
-        team_names: dict[int, str] = {}
-        for fx in fixtures:
-            for side in ("home", "away"):
-                t = fx["teams"][side]
-                team_names[t["id"]] = team_aliases.canonical(t["name"])
         for tid in team_ids:
             try:
                 ts = await api_football.team_statistics(client, tid, league_id, season, force=force)
