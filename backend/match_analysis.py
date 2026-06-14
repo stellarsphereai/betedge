@@ -182,6 +182,22 @@ def _today_call_count() -> int:
     return int(row["n"] or 0)
 
 
+def invalidate_cache(match_id: str | None = None) -> int:
+    """Expire cached analyses so the next request regenerates them.
+    Pass match_id to invalidate one match, or None to invalidate all."""
+    with db() as conn:
+        if match_id:
+            n = conn.execute(
+                "UPDATE match_analysis SET cache_expires_at = datetime('now','-1 second') WHERE match_id = ?",
+                (match_id,),
+            ).rowcount
+        else:
+            n = conn.execute(
+                "UPDATE match_analysis SET cache_expires_at = datetime('now','-1 second')"
+            ).rowcount
+    return n
+
+
 def _cached_analysis(match_id: str) -> dict | None:
     """Return cached analysis if cache_expires_at > now."""
     with db() as conn:

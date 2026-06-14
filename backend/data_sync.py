@@ -999,6 +999,13 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                      int(blend_overridden), blend_used),
                 )
             summary["predictions_upserted"] += 1
+            # Invalidate cached AI analysis so the next view regenerates
+            # with the fresh prediction data.
+            try:
+                import match_analysis
+                match_analysis.invalidate_cache(match_id)
+            except Exception:
+                pass
 
     summary["ok"] = True
     return summary
