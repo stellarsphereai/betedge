@@ -419,7 +419,7 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                     grouped[home_id].append(fx)
                 if away_id in team_ids:
                     grouped[away_id].append(fx)
-            # Goal averages for the fallback path. Three-step pipeline:
+            # Goal averages for the fallback path. Four-step pipeline:
             #   (1) compute per-source-league baseline goals/team/match
             #   (2) rescale each team's raw avg from source-league units
             #       to WC context (CONMEBOL ~1.0 g/team is normal there
@@ -427,6 +427,12 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             #       overshoots slightly)
             #   (3) Bayesian shrinkage toward the international baseline
             #       so thin-sample teams regress to sanity
+            #   (4) Confederation-strength discount — qualifier goals
+            #       against weak confederations don't translate to WC.
+            #       AFC/CONCACAF/OFC teams that scored freely against
+            #       regional minnows get their fallback xG dampened;
+            #       their xG-against gets inflated (they'll concede more
+            #       at WC level). UEFA teams pass through unchanged.
             #
             # Without the rescale step, Ecuador's 0.78 goals/game CONMEBOL
             # avg crosses through Dixon-Coles vs Curaçao to ~0.1 xG and
@@ -435,6 +441,32 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             # mapped to a sensible international scoring rate.
             INTL_BASELINE = 1.4  # goals per team per match in WC fixtures
             FULL_WEIGHT_GAMES = 10
+
+            # Step 4: confederation quality multipliers applied to the
+            # rescaled+shrunk fallback. Values < 1.0 on attack mean "your
+            # qualifier goals overstate WC attacking output"; values > 1.0
+            # on defense mean "you'll concede more at WC than in qualifiers."
+            # UEFA is the reference (1.0/1.0); others are discounted based
+            # on historical WC group-stage performance vs qualification stats.
+            CONFED_QUALITY = {
+                #                  (attack_mult, defense_mult)
+                "UEFA":      (1.00, 1.00),
+                "CONMEBOL":  (0.90, 1.05),
+                "CAF":       (0.80, 1.15),
+                "AFC":       (0.75, 1.20),
+                "CONCACAF":  (0.85, 1.10),
+                "OFC":       (0.65, 1.30),
+            }
+            CONFED_DEFAULT = (0.80, 1.15)
+
+            # Build tid → confederation lookup from wc_qualified_teams.
+            # Index by both raw name and normalize_key to handle aliases
+            # (e.g. "Ivory Coast" vs "Côte d'Ivoire").
+            import wc_qualified_teams
+            _name_to_confed: dict[str, str] = {}
+            for _qt in wc_qualified_teams.WC_2026_QUALIFIED:
+                _name_to_confed[_qt.name.lower()] = _qt.confederation
+                _name_to_confed[team_aliases.normalize_key(_qt.name)] = _qt.confederation
             league_goals: dict[int, list[int]] = defaultdict(list)
             for fx in corpus_fixtures:
                 g = fx.get("goals") or {}
@@ -485,10 +517,32 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 scale = INTL_BASELINE / src_baseline
                 rescaled_for = raw_for * scale
                 rescaled_against = raw_against * scale
-                w = min(ngames, FULL_WEIGHT_GAMES) / FULL_WEIGHT_GAMES
+                # Cap the data weight at 80% so the international baseline
+                # always retains ≥20% influence. Qualifier opposition is
+                # structurally weaker than WC group-stage — even 10 games
+                # against minnows shouldn't fully override the prior.
+                # (Tunisia conceded 0 goals in 10 CAF qualifiers; without
+                # the cap, shrunk_against = 0.0, producing phantom edges.)
+                MAX_DATA_WEIGHT = 0.80
+                w = min(ngames, FULL_WEIGHT_GAMES) / FULL_WEIGHT_GAMES * MAX_DATA_WEIGHT
+                shrunk_for = w * rescaled_for + (1 - w) * INTL_BASELINE
+                shrunk_against = w * rescaled_against + (1 - w) * INTL_BASELINE
+                # Floor: no WC team's fallback xG should be below 0.30
+                # (even the weakest WC side creates some chances / concedes
+                # some goals at tournament level).
+                WC_XG_FLOOR = 0.30
+                shrunk_for = max(shrunk_for, WC_XG_FLOOR)
+                shrunk_against = max(shrunk_against, WC_XG_FLOOR)
+                # Step 4: confederation-strength discount
+                tname = team_names.get(tid) or ""
+                confed = (
+                    _name_to_confed.get(tname.lower())
+                    or _name_to_confed.get(team_aliases.normalize_key(tname))
+                )
+                atk_mult, def_mult = CONFED_QUALITY.get(confed or "", CONFED_DEFAULT)
                 wc_goal_avg[tid] = (
-                    w * rescaled_for + (1 - w) * INTL_BASELINE,
-                    w * rescaled_against + (1 - w) * INTL_BASELINE,
+                    shrunk_for * atk_mult,
+                    shrunk_against * def_mult,
                 )
         else:
             try:
@@ -597,8 +651,16 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             #   3+ real samples → pure real xG, no fallback (R16 onward for non-UEFA)
             # European teams hit the 3+ bucket immediately from qualifier
             # xG and never see the blend or fallback.
-            FALLBACK_REPLICATION = 5
+            # Reduced from 5→3: fallback data shouldn't fill the same depth
+            # as real match data — fewer synthetic samples means the model's
+            # time-decay weights cover less ground, appropriately limiting
+            # the fallback's influence on team_strengths().
+            FALLBACK_REPLICATION = 3
             WC_BLEND_WEIGHT = {0: 0.0, 1: 0.30, 2: 0.60}
+            # Spread applied to replicated values so the model doesn't see
+            # "perfect consistency" from synthetic data.  ±8% of the mean
+            # gives three distinct values while keeping the average stable.
+            _FALLBACK_SPREAD = (1.08, 1.00, 0.92)
 
             def _wc_blend(xg_for, xg_against, avg, info):
                 n = len(xg_for)
@@ -615,8 +677,8 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                     else f"wc_blend_{n}sample_{int(w*100)}pct_real"
                 )
                 return (
-                    [blended_for] * FALLBACK_REPLICATION,
-                    [blended_against] * FALLBACK_REPLICATION,
+                    [blended_for * s for s in _FALLBACK_SPREAD],
+                    [blended_against * s for s in _FALLBACK_SPREAD],
                 )
 
             home_xg_for, home_xg_against = _wc_blend(
@@ -787,6 +849,18 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             # weight the prediction less.
             if is_tournament_knockout and (home_xg_info["fallback_used"] or away_xg_info["fallback_used"]):
                 prediction.confidence = "LOW"
+
+            # WC fallback confidence downgrade — when either side used the
+            # confederation-average fallback (0 real xG samples), the
+            # prediction is driven by qualifier goals, not match-level xG.
+            # Cap at LOW so the anomaly/gating pipeline treats it correctly.
+            if league == "world_cup" and (home_xg_info.get("fallback_used") or away_xg_info.get("fallback_used")):
+                if prediction.confidence == "HIGH":
+                    prediction.confidence = "MEDIUM"
+                # Full fallback on either side (0 real samples) → LOW
+                if home_xg_info.get("mode") == "season_avg_goals_fallback" or \
+                   away_xg_info.get("mode") == "season_avg_goals_fallback":
+                    prediction.confidence = "LOW"
 
             # Addition 3 — manager-change LOW confidence override.
             try:
