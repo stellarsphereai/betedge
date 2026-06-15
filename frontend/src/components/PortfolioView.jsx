@@ -77,26 +77,42 @@ function StatCard({ label, primary, secondary, tone = 'neutral' }) {
   )
 }
 
-function SummaryCards({ summary }) {
+function SummaryCards({ summary, filtered = false }) {
   if (!summary) return null
   const realizedTone = summary.realized_pnl > 0 ? 'good' : summary.realized_pnl < 0 ? 'bad' : 'neutral'
   const expectedTone = summary.expected_pnl > 0 ? 'accent' : 'neutral'
+  const totalBets = summary.open_bets_count + summary.settled_bets_count + summary.void_bets_count
+
+  // When filters are active, show P&L range relative to amount staked
+  // instead of the global starting bankroll.
+  const worstPnl = summary.realized_pnl - (summary.open_stakes || 0)
+  const bestPnl = summary.realized_pnl + (summary.open_max_payout || 0)
+  const valueLabel = filtered
+    ? 'P&L range'
+    : 'Portfolio value range'
+  const valuePrimary = filtered
+    ? `${fmtMoney(worstPnl, { signed: true })} – ${fmtMoney(bestPnl, { signed: true })}`
+    : `${fmtMoney(summary.current_value_worst)} – ${fmtMoney(summary.current_value_best)}`
+  const valueSecondary = filtered
+    ? `if all open ${summary.open_bets_count > 0 ? 'lose / win' : 'settle'} · ${totalBets} bet${totalBets === 1 ? '' : 's'} matched`
+    : `if all open ${summary.current_value_worst < summary.current_value_best ? 'lose / win' : 'settle'} · start ${fmtMoney(summary.starting_bankroll)}`
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       <StatCard
-        label="Total invested"
+        label="Total staked"
         primary={fmtMoney(summary.total_invested)}
-        secondary={`${summary.open_bets_count + summary.settled_bets_count + summary.void_bets_count} bets total · ${summary.open_bets_count} open`}
+        secondary={`${totalBets} bet${totalBets === 1 ? '' : 's'} total · ${summary.open_bets_count} open`}
       />
       <StatCard
-        label="Portfolio value range"
-        primary={`${fmtMoney(summary.current_value_worst)} – ${fmtMoney(summary.current_value_best)}`}
-        secondary={`if all open ${summary.current_value_worst < summary.current_value_best ? 'lose / win' : 'settle'} · start ${fmtMoney(summary.starting_bankroll)}`}
+        label={valueLabel}
+        primary={valuePrimary}
+        secondary={valueSecondary}
       />
       <StatCard
         label="Realized P&L"
         primary={`${fmtMoney(summary.realized_pnl, { signed: true })} (${fmtPct(summary.realized_pct, { signed: true })})`}
-        secondary={`on ${summary.settled_bets_count} settled bets · win rate ${fmtPct(summary.win_rate)}`}
+        secondary={`on ${summary.settled_bets_count} settled · win rate ${fmtPct(summary.win_rate)}`}
         tone={realizedTone}
       />
       <StatCard
@@ -852,6 +868,8 @@ export default function PortfolioView() {
       starting_bankroll: startingBankroll,
       current_value_best: startingBankroll + realizedPnl + openMaxPayout,
       current_value_worst: startingBankroll + realizedPnl - openStakes,
+      open_stakes: openStakes,
+      open_max_payout: openMaxPayout,
     }
   }, [filteredBets, hasFilters, summary, startingBankroll])
 
@@ -913,7 +931,7 @@ export default function PortfolioView() {
       {error && <div className="mb-3 text-xs text-bad">{error}</div>}
       {loading && <div className="mb-3 text-xs text-slate-500">Loading portfolio…</div>}
 
-      <SummaryCards summary={filteredSummary} />
+      <SummaryCards summary={filteredSummary} filtered={hasFilters} />
 
       <PortfolioByBook
         bets={filteredBets}
