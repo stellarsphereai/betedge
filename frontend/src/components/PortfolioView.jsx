@@ -766,7 +766,23 @@ function exportCSV(bets) {
 
 // ---------- top-level component ---------------------------------------------
 
+// Persist default portfolio view (mode + league) to localStorage
+const SAVED_VIEW_KEY = 'betedge_portfolio_view'
+function loadSavedView() {
+  try {
+    const raw = localStorage.getItem(SAVED_VIEW_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+function persistView(mode, league) {
+  try { localStorage.setItem(SAVED_VIEW_KEY, JSON.stringify({ mode, league })) } catch {}
+}
+function clearSavedView() {
+  try { localStorage.removeItem(SAVED_VIEW_KEY) } catch {}
+}
+
 export default function PortfolioView() {
+  const saved = useMemo(() => loadSavedView(), [])
   const [bets, setBets] = useState([])
   const [paperBets, setPaperBets] = useState([])
   const [cashBets, setCashBets] = useState([])
@@ -775,11 +791,12 @@ export default function PortfolioView() {
   const [projection, setProjection] = useState(null)
   // 'all' | 'paper' | 'cash'. Spec 1.5 — three tabs in portfolio so paper
   // and real-money performance can be inspected separately or together.
-  const [mode, setMode] = useState('paper')
+  const [mode, setMode] = useState(saved?.mode || 'paper')
   const paperOnly = mode === 'paper'
-  const [filters, setFilters] = useState({ league: '', market: '', status: '', dateFrom: '', dateTo: '' })
+  const [filters, setFilters] = useState({ league: saved?.league || '', market: '', status: '', dateFrom: '', dateTo: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [viewSaved, setViewSaved] = useState(!!saved)
 
   async function load() {
     setLoading(true); setError(null)
@@ -1003,6 +1020,21 @@ export default function PortfolioView() {
                   className="text-slate-500 hover:text-slate-300 px-1"
                   title="Clear date range"
                 >×</button>
+              )}
+            </div>
+            <div className="ml-auto flex items-center gap-1.5">
+              {viewSaved && saved?.mode === mode && saved?.league === filters.league ? (
+                <button
+                  onClick={() => { clearSavedView(); setViewSaved(false) }}
+                  className="px-2 py-1 rounded text-[10px] font-medium border border-ink-700 text-slate-400 hover:text-slate-200 hover:border-slate-500"
+                  title="Remove saved default view"
+                >Clear default</button>
+              ) : (
+                <button
+                  onClick={() => { persistView(mode, filters.league); setViewSaved(true) }}
+                  className="px-2 py-1 rounded text-[10px] font-medium border border-accent/40 text-accent hover:bg-accent hover:text-white"
+                  title="Save current mode and league as your default view"
+                >Save as default</button>
               )}
             </div>
           </div>
