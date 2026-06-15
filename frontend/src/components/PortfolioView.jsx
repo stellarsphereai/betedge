@@ -249,7 +249,7 @@ function StatusPill({ status }) {
   return <span className={`uppercase text-[10px] font-semibold px-1.5 py-0.5 rounded ${s.cls}`}>{s.label}</span>
 }
 
-function BetTable({ bets, league, market, status, dateFrom }) {
+function BetTable({ bets, league, market, status, dateFrom, dateTo }) {
   const [sortBy, setSortBy] = useState('timestamp')
   const [sortDir, setSortDir] = useState('desc')
 
@@ -262,9 +262,14 @@ function BetTable({ bets, league, market, status, dateFrom }) {
         const t = new Date(b.timestamp).getTime()
         if (t < new Date(dateFrom).getTime()) return false
       }
+      if (dateTo) {
+        const t = new Date(b.timestamp).getTime()
+        // Include the entire end date (up to 23:59:59)
+        if (t > new Date(dateTo + 'T23:59:59').getTime()) return false
+      }
       return true
     })
-  }, [bets, league, market, status, dateFrom])
+  }, [bets, league, market, status, dateFrom, dateTo])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -750,7 +755,7 @@ export default function PortfolioView() {
   // and real-money performance can be inspected separately or together.
   const [mode, setMode] = useState('paper')
   const paperOnly = mode === 'paper'
-  const [filters, setFilters] = useState({ league: '', market: '', status: '', dateFrom: '' })
+  const [filters, setFilters] = useState({ league: '', market: '', status: '', dateFrom: '', dateTo: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -901,12 +906,29 @@ export default function PortfolioView() {
               <option value="lost">Lost</option>
               <option value="void">Void</option>
             </select>
-            <input
-              type="date"
-              value={filters.dateFrom}
-              onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
-              className="bg-ink-800 border border-ink-700 rounded px-2 py-1 text-slate-200"
-            />
+            <div className="flex items-center gap-1">
+              <span className="text-slate-500">From</span>
+              <input
+                type="date"
+                value={filters.dateFrom}
+                onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
+                className="bg-ink-800 border border-ink-700 rounded px-2 py-1 text-slate-200"
+              />
+              <span className="text-slate-500">to</span>
+              <input
+                type="date"
+                value={filters.dateTo}
+                onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))}
+                className="bg-ink-800 border border-ink-700 rounded px-2 py-1 text-slate-200"
+              />
+              {(filters.dateFrom || filters.dateTo) && (
+                <button
+                  onClick={() => setFilters(f => ({ ...f, dateFrom: '', dateTo: '' }))}
+                  className="text-slate-500 hover:text-slate-300 px-1"
+                  title="Clear date range"
+                >×</button>
+              )}
+            </div>
           </div>
 
           <BetTable
@@ -915,6 +937,7 @@ export default function PortfolioView() {
             market={filters.market}
             status={filters.status}
             dateFrom={filters.dateFrom}
+            dateTo={filters.dateTo}
           />
 
         </div>
