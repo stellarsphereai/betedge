@@ -255,7 +255,7 @@ function BetTable({ bets, league, market, status, dateFrom, dateTo }) {
 
   const filtered = useMemo(() => {
     return bets.filter(b => {
-      if (league && b.league !== league) return false
+      if (league && (b.league || b.match_league) !== league) return false
       if (market && (b.market || 'h2h') !== market) return false
       if (status && b.status !== status) return false
       if (dateFrom) {
