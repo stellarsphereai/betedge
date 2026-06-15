@@ -85,17 +85,23 @@ function SummaryCards({ summary, filtered = false }) {
 
   // When filters are active, show P&L range relative to amount staked
   // instead of the global starting bankroll.
+  const hasOpen = summary.open_bets_count > 0
   const worstPnl = summary.realized_pnl - (summary.open_stakes || 0)
   const bestPnl = summary.realized_pnl + (summary.open_max_payout || 0)
-  const valueLabel = filtered
-    ? 'P&L range'
-    : 'Portfolio value range'
-  const valuePrimary = filtered
-    ? `${fmtMoney(worstPnl, { signed: true })} – ${fmtMoney(bestPnl, { signed: true })}`
-    : `${fmtMoney(summary.current_value_worst)} – ${fmtMoney(summary.current_value_best)}`
-  const valueSecondary = filtered
-    ? `if all open ${summary.open_bets_count > 0 ? 'lose / win' : 'settle'} · ${totalBets} bet${totalBets === 1 ? '' : 's'} matched`
-    : `if all open ${summary.current_value_worst < summary.current_value_best ? 'lose / win' : 'settle'} · start ${fmtMoney(summary.starting_bankroll)}`
+  let valueLabel, valuePrimary, valueSecondary
+  if (!filtered) {
+    valueLabel = 'Portfolio value range'
+    valuePrimary = `${fmtMoney(summary.current_value_worst)} – ${fmtMoney(summary.current_value_best)}`
+    valueSecondary = `if all open ${summary.current_value_worst < summary.current_value_best ? 'lose / win' : 'settle'} · start ${fmtMoney(summary.starting_bankroll)}`
+  } else if (hasOpen) {
+    valueLabel = 'P&L range'
+    valuePrimary = `${fmtMoney(worstPnl, { signed: true })} to ${fmtMoney(bestPnl, { signed: true })}`
+    valueSecondary = `if all ${summary.open_bets_count} open lose / win · ${totalBets} bet${totalBets === 1 ? '' : 's'} matched`
+  } else {
+    valueLabel = 'Net P&L'
+    valuePrimary = fmtMoney(summary.realized_pnl, { signed: true })
+    valueSecondary = `all ${totalBets} bet${totalBets === 1 ? '' : 's'} settled · ROI ${fmtPct(summary.realized_pct, { signed: true })}`
+  }
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
