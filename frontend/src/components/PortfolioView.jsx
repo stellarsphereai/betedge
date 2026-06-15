@@ -803,6 +803,58 @@ export default function PortfolioView() {
   const startingBankroll = summary?.starting_bankroll ?? 1000
   const defaultEdge = summary?.avg_edge || 0.06
 
+  // Apply the same filters used by BetTable to compute a local summary
+  // that updates the financial tiles when filters change.
+  const hasFilters = !!(filters.league || filters.market || filters.status || filters.dateFrom || filters.dateTo)
+  const filteredBets = useMemo(() => {
+    if (!hasFilters) return bets
+    return bets.filter(b => {
+      if (filters.league && (b.league || b.match_league) !== filters.league) return false
+      if (filters.market && (b.market || 'h2h') !== filters.market) return false
+      if (filters.status && b.status !== filters.status) return false
+      if (filters.dateFrom) {
+        const t = new Date(b.timestamp).getTime()
+        if (t < new Date(filters.dateFrom).getTime()) return false
+      }
+      if (filters.dateTo) {
+        const t = new Date(b.timestamp).getTime()
+        if (t > new Date(filters.dateTo + 'T23:59:59').getTime()) return false
+      }
+      return true
+    })
+  }, [bets, filters, hasFilters])
+
+  const filteredSummary = useMemo(() => {
+    if (!hasFilters) return summary
+    const fb = filteredBets
+    const open = fb.filter(b => b.status === 'open')
+    const settled = fb.filter(b => b.status === 'won' || b.status === 'lost')
+    const voidBets = fb.filter(b => b.status === 'void')
+    const won = fb.filter(b => b.status === 'won')
+    const totalInvested = fb.reduce((s, b) => s + (b.stake || 0), 0)
+    const realizedPnl = settled.reduce((s, b) => s + (b.profit || 0), 0)
+    const expectedPnl = open.reduce((s, b) => s + (b.stake || 0) * (b.edge_at_placement || 0), 0)
+    const edges = fb.filter(b => b.edge_at_placement != null).map(b => b.edge_at_placement)
+    const avgEdge = edges.length > 0 ? edges.reduce((a, e) => a + e, 0) / edges.length : 0
+    const winRate = settled.length > 0 ? won.length / settled.length : 0
+    const openStakes = open.reduce((s, b) => s + (b.stake || 0), 0)
+    const openMaxPayout = open.reduce((s, b) => s + (b.stake || 0) * ((b.odds_at_placement || 1) - 1), 0)
+    return {
+      total_invested: totalInvested,
+      open_bets_count: open.length,
+      settled_bets_count: settled.length,
+      void_bets_count: voidBets.length,
+      realized_pnl: realizedPnl,
+      realized_pct: totalInvested > 0 ? realizedPnl / totalInvested : 0,
+      expected_pnl: expectedPnl,
+      avg_edge: avgEdge,
+      win_rate: winRate,
+      starting_bankroll: startingBankroll,
+      current_value_best: startingBankroll + realizedPnl + openMaxPayout,
+      current_value_worst: startingBankroll + realizedPnl - openStakes,
+    }
+  }, [filteredBets, hasFilters, summary, startingBankroll])
+
   return (
     <div>
       {/* Header strip */}
@@ -861,10 +913,10 @@ export default function PortfolioView() {
       {error && <div className="mb-3 text-xs text-bad">{error}</div>}
       {loading && <div className="mb-3 text-xs text-slate-500">Loading portfolio…</div>}
 
-      <SummaryCards summary={summary} />
+      <SummaryCards summary={filteredSummary} />
 
       <PortfolioByBook
-        bets={bets}
+        bets={filteredBets}
         bookBalances={bookBalances}
         mode={mode === 'all' ? 'all' : mode === 'paper' ? 'paper' : 'cash'}
       />
