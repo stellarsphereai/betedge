@@ -158,7 +158,7 @@ def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS) -> tupl
     averages when both sides are present (season_blend = weight on recent)."""
     recent_for = _weighted_avg(form.xg_for, params.game_weights)
     recent_against = _weighted_avg(form.xg_against, params.game_weights)
-    if form.season_avg_for is not None and form.season_avg_against is not None:
+    if form.season_avg_for and form.season_avg_against:
         b = params.season_blend
         return (
             recent_for * b + form.season_avg_for * (1 - b),
@@ -206,12 +206,17 @@ def predict(
     away_pen = 1.0
     home_pens: list[str] = []
     away_pens: list[str] = []
-    if rest_diff < -2:
-        home_pen *= p.rest_tired_penalty
-        home_pens.append("rest_tired")
-    elif rest_diff > 2:
-        away_pen *= p.rest_tired_penalty
-        away_pens.append("rest_tired")
+    # Rest penalty only applies when both teams have played recently
+    # (within 14 days). Pre-tournament rest gaps of 200+ days are
+    # meaningless — neither team is fatigued.
+    REST_RELEVANCE_CAP = 14
+    if home.rest_days <= REST_RELEVANCE_CAP and away.rest_days <= REST_RELEVANCE_CAP:
+        if rest_diff < -2:
+            home_pen *= p.rest_tired_penalty
+            home_pens.append("rest_tired")
+        elif rest_diff > 2:
+            away_pen *= p.rest_tired_penalty
+            away_pens.append("rest_tired")
     if home.top_scorer_out:
         home_pen *= p.injured_scorer_penalty
         home_pens.append("scorer_out")
