@@ -70,6 +70,10 @@ _ALIASES = {
     "iran islamic republic of": "Iran",
     "ivory coast": "Côte d'Ivoire",
     "cote divoire": "Côte d'Ivoire",
+    "dr congo": "Congo DR",
+    "congo dr": "Congo DR",
+    "democratic republic of the congo": "Congo DR",
+    "dem rep congo": "Congo DR",
     "czechia": "Czech Republic",
 }
 
