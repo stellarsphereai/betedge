@@ -860,15 +860,18 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 prediction.confidence = "LOW"
 
             # WC fallback confidence downgrade — when either side used the
-            # confederation-average fallback (0 real xG samples), the
-            # prediction is driven by qualifier goals, not match-level xG.
-            # Cap at LOW so the anomaly/gating pipeline treats it correctly.
+            # confederation-average fallback, cap confidence since part of
+            # the prediction relies on qualifier goals rather than match xG.
+            # Only force LOW when BOTH sides are on full fallback (0 real
+            # samples each). When one side has real data (e.g. Portugal 6
+            # games vs Congo DR 0 games), the prediction is still primarily
+            # driven by the well-scouted side → MEDIUM is appropriate.
             if league == "world_cup" and (home_xg_info.get("fallback_used") or away_xg_info.get("fallback_used")):
                 if prediction.confidence == "HIGH":
                     prediction.confidence = "MEDIUM"
-                # Full fallback on either side (0 real samples) → LOW
-                if home_xg_info.get("mode") == "season_avg_goals_fallback" or \
-                   away_xg_info.get("mode") == "season_avg_goals_fallback":
+                home_full_fb = home_xg_info.get("mode") == "season_avg_goals_fallback"
+                away_full_fb = away_xg_info.get("mode") == "season_avg_goals_fallback"
+                if home_full_fb and away_full_fb:
                     prediction.confidence = "LOW"
 
             # Addition 3 — manager-change LOW confidence override.
