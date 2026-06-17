@@ -182,6 +182,58 @@ function MarkResultControl({ bet, onMark }) {
   )
 }
 
+function EditableStake({ bet, onUpdated }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  function startEdit() {
+    setValue(bet.stake?.toFixed(2) || '')
+    setEditing(true)
+  }
+
+  async function save() {
+    const num = parseFloat(value)
+    if (!num || num <= 0 || busy) return
+    setBusy(true)
+    try {
+      const r = await api.updateBetStake(bet.id, num)
+      onUpdated?.(bet.id, r)
+      setEditing(false)
+    } catch { /* noop */ }
+    finally { setBusy(false) }
+  }
+
+  if (!editing) {
+    return (
+      <span
+        onClick={startEdit}
+        className="cursor-pointer hover:text-accent border-b border-dashed border-transparent hover:border-accent"
+        title="Click to edit stake"
+      >
+        {fmtMoney(bet.stake)}
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <span className="text-slate-500">$</span>
+      <input
+        type="number" min="1" step="0.01"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+        autoFocus
+        disabled={busy}
+        className="w-14 h-5 text-right text-[11px] tabular-nums bg-ink-800 border border-accent/40 rounded px-1 text-slate-200 focus:border-accent focus:outline-none"
+      />
+      <button onClick={save} disabled={busy} className="text-[10px] font-bold text-good hover:opacity-80">✓</button>
+      <button onClick={() => setEditing(false)} className="text-[10px] text-slate-500 hover:text-slate-300">✕</button>
+    </span>
+  )
+}
+
 function ActionsCell({ bet, onDeleted, onModeChanged }) {
   const [stage, setStage] = useState('idle')   // 'idle' | 'confirm-cancel' | 'busy'
   const [err, setErr] = useState(null)
@@ -271,7 +323,7 @@ function ActionsCell({ bet, onDeleted, onModeChanged }) {
   )
 }
 
-export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeChangeBet }) {
+export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeChangeBet, onStakeUpdated }) {
   const [mode, setMode] = useState('cash')  // 'paper' | 'cash'
   const [leagueFilter, setLeagueFilter] = useState('')  // '' = all
   const all = bets || []
@@ -387,7 +439,7 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeC
                 <td className={`text-right tabular-nums ${b.clv == null ? '' : b.clv >= 0 ? 'text-good' : 'text-bad'}`}>
                   {b.clv == null ? '—' : (b.clv >= 0 ? '+' : '') + Number(b.clv).toFixed(2)}
                 </td>
-                <td className="text-right tabular-nums">{fmtMoney(b.stake)}</td>
+                <td className="text-right tabular-nums"><EditableStake bet={b} onUpdated={onStakeUpdated} /></td>
                 <td className={`text-right tabular-nums ${b.profit == null ? '' : b.profit >= 0 ? 'text-good' : 'text-bad'}`}>
                   {b.profit == null ? '—' : fmtMoney(b.profit)}
                 </td>

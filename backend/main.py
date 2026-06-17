@@ -1265,6 +1265,33 @@ async def set_bet_paper(bet_id: int, value: bool):
     return {"ok": True, "id": bet_id, "is_paper": value}
 
 
+@app.patch("/bets/{bet_id}/stake")
+async def update_bet_stake(bet_id: int, stake: float = Query(..., gt=0)):
+    """Override the stake on a logged bet. Allows the user to correct the
+    amount after placement (e.g. the book rounded the stake, or they
+    manually adjusted). Allowed on any status — settled bets may need
+    correction too for accurate P&L tracking."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id, stake, odds_at_placement, edge_at_placement, status FROM bets_placed WHERE id = ?",
+            (bet_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, f"bet {bet_id} not found")
+        updates = {"stake": round(stake, 2)}
+        # Recalculate profit for settled bets
+        if row["status"] == "won" and row["odds_at_placement"]:
+            updates["profit"] = round(stake * (row["odds_at_placement"] - 1), 2)
+        elif row["status"] == "lost":
+            updates["profit"] = round(-stake, 2)
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE bets_placed SET {set_clause} WHERE id = ?",
+            (*updates.values(), bet_id),
+        )
+    return {"ok": True, "id": bet_id, **updates}
+
+
 @app.delete("/bets/{bet_id}")
 async def delete_bet(bet_id: int):
     """Hard-delete a logged bet. Used by the paper-trade-log "remove" button:

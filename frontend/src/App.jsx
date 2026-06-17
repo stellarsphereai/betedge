@@ -283,6 +283,7 @@ export default function App() {
           onMarkResult={markBetResult}
           onDeleteBet={onDeleteBet}
           onModeChangeBet={onModeChangeBet}
+          onStakeUpdated={() => loadAll()}
         />
       ) : tab === 'portfolio' ? (
         <PortfolioView />

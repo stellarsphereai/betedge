@@ -42,6 +42,14 @@ export const api = {
     if (!r.ok) throw new Error(`HTTP ${r.status} on DELETE /bets/${betId}`)
     return r.json()
   },
+  updateBetStake: async (betId, stake) => {
+    const r = await fetch(`/bets/${betId}/stake?stake=${stake}`, { method: 'PATCH' })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      throw new Error(body?.detail || `HTTP ${r.status}`)
+    }
+    return r.json()
+  },
   setBetPaper: async (betId, isPaper) => {
     const r = await fetch(`/bets/${betId}/set-paper?value=${isPaper}`, { method: 'POST' })
     if (!r.ok) {
