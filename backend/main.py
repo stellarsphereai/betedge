@@ -71,10 +71,15 @@ MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "0.02"))
 # corpus). Tighter floor on edge, smaller stake cap, only HIGH-confidence
 # predictions, model must agree with market consensus, and a daily loss cap
 # that locks out further actionable WC bets once breached.
-WC_MIN_EDGE = float(os.getenv("WC_MIN_EDGE", "0.08"))
-WC_MAX_STAKE_PCT = float(os.getenv("WC_MAX_STAKE_PCT", "0.005"))
+WC_MIN_EDGE = float(os.getenv("WC_MIN_EDGE", "0.05"))
+WC_MAX_STAKE_PCT = float(os.getenv("WC_MAX_STAKE_PCT", "0.015"))
 WC_HIGH_CONFIDENCE_ONLY = os.getenv("WC_HIGH_CONFIDENCE_ONLY", "true").strip().lower() == "true"
 WC_REQUIRE_MARKET_AGREEMENT = os.getenv("WC_REQUIRE_MARKET_AGREEMENT", "true").strip().lower() == "true"
+# Soft market agreement: instead of hard-blocking bets that disagree with
+# market consensus, allow bets where the model's edge is large enough to
+# justify overriding the market view. Below this threshold, the hard gate
+# still applies. Set to 0 to restore the original hard gate.
+WC_MARKET_OVERRIDE_EDGE = float(os.getenv("WC_MARKET_OVERRIDE_EDGE", "0.12"))
 WC_DAILY_LOSS_CAP_PCT = float(os.getenv("WC_DAILY_LOSS_CAP_PCT", "0.02"))
 # Early-tournament window: relax the high-confidence gate for each team's
 # first WC_EARLY_GAMES group-stage matches (no in-tournament data exists yet,
@@ -638,9 +643,11 @@ async def get_ev_bets(
             # disagrees with the de-vigged market consensus on direction —
             # books are sharper than us on this corpus, so a hard disagreement
             # is more likely a model error than an inefficiency.
+            # Softened: bets with edge >= WC_MARKET_OVERRIDE_EDGE bypass the
+            # gate — a large enough edge justifies overriding consensus.
             if risk["require_market_agreement"] and avg:
                 market_pick = max(avg, key=avg.get)
-                if market_pick != b.outcome:
+                if market_pick != b.outcome and b.edge < WC_MARKET_OVERRIDE_EDGE:
                     continue
 
             row = {

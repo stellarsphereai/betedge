@@ -157,6 +157,29 @@ async def fixture_statistics(client: httpx.AsyncClient, fixture_id: int, force: 
     return data.get("response", []) or []
 
 
+async def fixture_lineups(client: httpx.AsyncClient, fixture_id: int, force: bool = True) -> list[dict]:
+    """Fetch lineups for a fixture. Returns list of team lineup objects.
+    Available ~60min before kickoff. force=True by default since lineups
+    change up to kickoff and a stale cache would defeat the purpose."""
+    data = await _get(client, "/fixtures/lineups", {"fixture": fixture_id}, force=force)
+    return data.get("response", []) or []
+
+
+def lineup_missing_key_players(lineups: list[dict], team_id: int, top_scorers: list[int]) -> list[int]:
+    """Check if any of a team's top scorers are NOT in the starting XI.
+    Returns list of missing player IDs."""
+    for lineup in lineups:
+        if lineup.get("team", {}).get("id") != team_id:
+            continue
+        starter_ids = {
+            p.get("player", {}).get("id")
+            for p in lineup.get("startXI", [])
+            if p.get("player", {}).get("id")
+        }
+        return [pid for pid in top_scorers if pid not in starter_ids]
+    return []
+
+
 async def injuries(client: httpx.AsyncClient, league: int, season: int, force: bool = False) -> list[dict]:
     data = await _get(client, "/injuries", {"league": league, "season": season}, force=force)
     return data.get("response", []) or []

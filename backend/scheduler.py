@@ -651,6 +651,10 @@ def build() -> AsyncIOScheduler:
         ("sync_ucl_final",   _league_sync_job("ucl"),       CronTrigger(year=2026, month=5, day=30, hour=0, minute=0, timezone=TIMEZONE)),
         ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
         ("sync_world_cup",   _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
+        # Mid-day WC re-sync: after morning matches settle, re-run the model
+        # with fresh xG data so afternoon/evening match predictions benefit
+        # from that day's results. Also captures any lineup-driven adjustments.
+        ("sync_world_cup_midday", _league_sync_job("world_cup"), CronTrigger(hour=12, minute=0, timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
         ("real_trade_audit",      job_real_trade_audit,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
         # Spec section 2 — 9-task nightly automation pipeline (May 31 → June 10).

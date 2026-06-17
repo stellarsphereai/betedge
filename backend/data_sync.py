@@ -752,12 +752,43 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                         breakpoint_overall.side = side_name
                         breakpoint_team = cand_team
 
+            # Lineup check: if the match kicks off within 90 minutes, try
+            # to fetch lineups and flag key-player absences. This overrides
+            # the injury-list-based top_scorer_out with real lineup data
+            # (rotation, tactical benching, late injuries not on the list).
+            home_scorer_out = scorer_out_map.get(home_id, False)
+            away_scorer_out = scorer_out_map.get(away_id, False)
+            try:
+                kickoff_dt = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
+                minutes_to_kickoff = (kickoff_dt - datetime.now(timezone.utc)).total_seconds() / 60
+                if 0 < minutes_to_kickoff < 90:
+                    lineups = await api_football.fixture_lineups(client, fx["fixture"]["id"])
+                    if lineups:
+                        # Get top-3 scorer IDs per team from the scorers list
+                        top3: dict[int, list[int]] = defaultdict(list)
+                        for s in (scrs if 'scrs' in dir() else []):
+                            tid = s.get("statistics", [{}])[0].get("team", {}).get("id")
+                            pid = s.get("player", {}).get("id")
+                            if tid and pid and len(top3[tid]) < 3:
+                                top3[tid].append(pid)
+                        for tid, flag_attr in [(home_id, "home"), (away_id, "away")]:
+                            if top3.get(tid):
+                                missing = api_football.lineup_missing_key_players(lineups, tid, top3[tid])
+                                if missing:
+                                    if tid == home_id:
+                                        home_scorer_out = True
+                                    else:
+                                        away_scorer_out = True
+                                    log.info("lineup: %s missing key player(s) %s", team_names.get(tid), missing)
+            except Exception:
+                pass  # lineup check is best-effort
+
             home_form = model.TeamForm(
                 name=team_aliases.canonical(fx["teams"]["home"]["name"]),
                 xg_for=home_xg_for_adj,
                 xg_against=home_xg_against_adj,
                 rest_days=_rest_days_for_team(home_id, kickoff_iso, team_recent.get(home_id, [])),
-                top_scorer_out=scorer_out_map.get(home_id, False),
+                top_scorer_out=home_scorer_out,
                 games_played=len(home_xg_for_adj),
                 season_avg_for=h_season_for,
                 season_avg_against=h_season_against,
@@ -767,7 +798,7 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 xg_for=away_xg_for_adj,
                 xg_against=away_xg_against_adj,
                 rest_days=_rest_days_for_team(away_id, kickoff_iso, team_recent.get(away_id, [])),
-                top_scorer_out=scorer_out_map.get(away_id, False),
+                top_scorer_out=away_scorer_out,
                 games_played=len(away_xg_for_adj),
                 season_avg_for=a_season_for,
                 season_avg_against=a_season_against,
