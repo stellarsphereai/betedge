@@ -599,11 +599,12 @@ function ScenarioCard({ s }) {
   )
 }
 
-function CalculatorPanel({ defaultEdge }) {
+function CalculatorPanel({ defaultEdge, defaultBankroll }) {
   const [matches, setMatches] = useState(64)
   const [stake, setStake] = useState(20)
   const [edge, setEdge] = useState(defaultEdge ?? 0.06)
   const [betsPerMatch, setBetsPerMatch] = useState(1.5)
+  const [bankroll, setBankroll] = useState(defaultBankroll ?? 5000)
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
 
@@ -613,13 +614,13 @@ function CalculatorPanel({ defaultEdge }) {
       try {
         setError(null)
         const r = await api.portfolioProjection({
-          matches, stake, edge, betsPerMatch,
+          matches, stake, edge, betsPerMatch, startingBankroll: bankroll,
         })
         setData(r)
       } catch (e) { setError(e.message || String(e)) }
     }, 200)
     return () => clearTimeout(id)
-  }, [matches, stake, edge, betsPerMatch])
+  }, [matches, stake, edge, betsPerMatch, bankroll])
 
   return (
     <div className="bg-ink-900 border border-ink-700 rounded-xl p-4 space-y-4">
@@ -629,7 +630,8 @@ function CalculatorPanel({ defaultEdge }) {
       </div>
 
       <div className="space-y-3">
-        <Slider label="Remaining matches"   value={matches}      onChange={setMatches}      min={10}  max={200} step={1}     />
+        <Slider label="Bankroll"             value={bankroll}     onChange={setBankroll}     min={500} max={50000} step={500}  format={v => `$${v.toLocaleString()}`} />
+        <Slider label="Remaining matches"    value={matches}      onChange={setMatches}      min={10}  max={200} step={1}     />
         <Slider label="Average stake"        value={stake}        onChange={setStake}        min={5}   max={100} step={1}     format={v => `$${v}`} />
         <Slider label="Average edge"         value={edge}         onChange={setEdge}         min={0.01} max={0.15} step={0.005} format={v => `${(v*100).toFixed(1)}%`} />
         <Slider label="Bets per match"       value={betsPerMatch} onChange={setBetsPerMatch} min={0.5} max={3}   step={0.1}   />
@@ -1051,7 +1053,7 @@ export default function PortfolioView() {
         </div>
 
         <div className="space-y-4">
-          <CalculatorPanel defaultEdge={defaultEdge} />
+          <CalculatorPanel defaultEdge={defaultEdge} defaultBankroll={startingBankroll} />
         </div>
       </div>
 
