@@ -809,12 +809,19 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             if breakpoint_overall is not None:
                 match_params = dataclasses.replace(match_params, season_blend=trend_detection.BREAKPOINT_BLEND)
                 blend_overridden = True
-            # Neutral-venue final override — UCL/UEL/WC championship and
-            # 3rd-place finals are at neutral venues. The league's
-            # home_gamma multiplier (1.25 for UCL, 1.20 for WC, etc.)
-            # would otherwise give the nominal "home" side an advantage
-            # they don't actually have. Override to 1.0 here.
-            if _is_neutral_venue_final(this_round, league):
+            # Neutral-venue override — every WC 2026 match is at a neutral
+            # venue (USA/Canada/Mexico). The nominal "home" side in FIFA's
+            # designation gets no real crowd/travel advantage, so override
+            # home_gamma to 1.0. UCL/UEL finals also get this treatment.
+            # Host nations (USA, Canada, Mexico) get a small residual
+            # gamma (1.08) since they do have genuine home crowds.
+            if league == "world_cup":
+                home_name = team_aliases.canonical(fx["teams"]["home"]["name"])
+                if home_name in ("USA", "Canada", "Mexico"):
+                    match_params = dataclasses.replace(match_params, home_gamma=1.08)
+                else:
+                    match_params = dataclasses.replace(match_params, home_gamma=1.0)
+            elif _is_neutral_venue_final(this_round, league):
                 match_params = dataclasses.replace(match_params, home_gamma=1.0)
             blend_used = f"{int(round(match_params.season_blend*100))}/{int(round((1-match_params.season_blend)*100))}"
             prediction = model.predict(home_form, away_form, knockout=knockout, params=match_params, league_id=league_id)
