@@ -187,6 +187,7 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
   // Per-row log state, keyed by (market, line, outcome). Lets multiple rows
   // be logged independently without sharing one button's spinner.
   const [logStates, setLogStates] = useState({}) // { rowKey: 'logging' | 'logged' }
+  const [stakeOverrides, setStakeOverrides] = useState({}) // { rowKey: number }
   const [showAnalysis, setShowAnalysis] = useState(false)
 
   // Match-level "bets placed" flag, hydrated from localStorage. The toggle is
@@ -214,9 +215,13 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
     if (cur === 'logging' || cur === 'logging-real' || cur === 'logged') return
     const inFlight = kind === 'real' ? 'logging-real' : 'logging'
     setLogStates(s => ({ ...s, [k]: inFlight }))
+    // Apply stake override if the user edited the amount
+    const betWithStake = stakeOverrides[k] != null
+      ? { ...b, stake: stakeOverrides[k] }
+      : b
     try {
       const handler = kind === 'real' ? onLogReal : onLogPaper
-      await handler?.(prediction, b)
+      await handler?.(prediction, betWithStake)
       setLogStates(s => ({ ...s, [k]: 'logged' }))
       setTimeout(() => setLogStates(s => {
         const { [k]: _drop, ...rest } = s
@@ -347,7 +352,25 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
                       {b.timing || 'GREEN'}
                     </span>
                   </td>
-                  <td className="text-right tabular-nums">{fmtMoney(b.stake)}</td>
+                  <td className="text-right tabular-nums">
+                    <span className="inline-flex items-center gap-0.5">
+                      <span className="text-slate-500">$</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        defaultValue={Math.round(b.stake || 0)}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value)
+                          const k = rowKey(b)
+                          if (v > 0) setStakeOverrides(s => ({ ...s, [k]: v }))
+                          else setStakeOverrides(s => { const { [k]: _, ...rest } = s; return rest })
+                        }}
+                        className="w-12 h-5 text-right text-[11px] tabular-nums bg-ink-800 border border-ink-700 rounded px-1 text-slate-200 focus:border-accent focus:outline-none"
+                        title="Edit stake before logging"
+                      />
+                    </span>
+                  </td>
                   <td className="text-center">
                       {(() => {
                         // Disable both buttons when stake resolved to $0 —
