@@ -93,13 +93,11 @@ SYSTEM_PROMPT = (
     "4. Kelly stake — high conviction (full cap, $20), medium ($10-15), "
     "low (<$10)?\n"
     "5. Concentration risk — is there already a bet on this match today?\n"
-    "6. Daily bet limit — how many bets logged today; room for another within "
-    "the 3-bet daily limit?\n"
+    "6. Daily bet limit — how many bets logged today?\n"
     "7. Do multiple bets on this card tell a consistent story or contradict?\n\n"
     "RULES for your final recommendation:\n"
     "- Never recommend more than ONE bet per match.\n"
-    "- Never recommend ANY bet if 3 bets are already logged today (at the "
-    "daily cap).\n"
+    "- There is no daily bet limit. Recommend bets freely based on edge quality.\n"
     "- Never recommend a draw bet unless ALL THREE: edge ≥ 5%, book is "
     "FanDuel or DraftKings, Kelly stake ≥ $15.\n"
     "- If all bets are on soft books with small Kelly stakes, recommend "
@@ -261,8 +259,8 @@ def _build_user_prompt(
     existing_bets: list[dict] | None = None,
     todays_bets_count: int = 0,
     book_balances: list[dict] | None = None,
-    max_bets_per_day: int = 3,
-    max_stake_per_bet: int = 20,
+    max_bets_per_day: int = 0,
+    max_stake_per_bet: int = 75,
 ) -> str:
     """Assemble the per-match prompt from stored prediction + anomaly_log
     + the new operational context (ev bets, existing bets, daily counts,
@@ -402,17 +400,16 @@ def _build_user_prompt(
         f"{_render_ev_bets_block(ev_bets)}\n\n"
         f"BETS ALREADY LOGGED ON THIS MATCH TODAY:\n"
         f"{_render_existing_bets_block(existing_bets)}\n\n"
-        f"DAILY LIMITS:\n"
+        f"CONTEXT:\n"
         f"  bets logged today (across all matches): {todays_bets_count}\n"
-        f"  max bets per day: {max_bets_per_day}\n"
         f"  max stake per bet: ${max_stake_per_bet}\n"
-        f"  remaining bets allowed today: {max(0, max_bets_per_day - todays_bets_count)}\n\n"
+        f"  no daily bet limit — recommend freely based on edge quality\n\n"
         f"ACCOUNT BALANCES:\n"
         f"{_render_balances_block(book_balances)}\n\n"
         f"Now do the full analysis per the system prompt's structure. "
         f"After analyzing the match, analyze EACH bet listed above, then "
         f"give ONE clear final recommendation. Apply ALL the rules: never "
-        f"more than one bet per match, respect the daily limit, never a "
+        f"more than one bet per match, never a "
         f"draw bet under the strict criteria, label every book sharp/decent/"
         f"soft, never hedge. The final 'MY RECOMMENDATION' section must "
         f"appear exactly as specified in the system prompt with the equals-"
@@ -487,8 +484,8 @@ async def analyze_match(
     existing_bets: list[dict] | None = None,
     todays_bets_count: int = 0,
     book_balances: list[dict] | None = None,
-    max_bets_per_day: int = 3,
-    max_stake_per_bet: int = 20,
+    max_bets_per_day: int = 0,
+    max_stake_per_bet: int = 75,
 ) -> dict:
     """Get-or-generate analysis for a match.
 
