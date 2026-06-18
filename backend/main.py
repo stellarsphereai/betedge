@@ -80,7 +80,7 @@ WC_REQUIRE_MARKET_AGREEMENT = os.getenv("WC_REQUIRE_MARKET_AGREEMENT", "true").s
 # justify overriding the market view. Below this threshold, the hard gate
 # still applies. Set to 0 to restore the original hard gate.
 WC_MARKET_OVERRIDE_EDGE = float(os.getenv("WC_MARKET_OVERRIDE_EDGE", "0.12"))
-WC_DAILY_LOSS_CAP_PCT = float(os.getenv("WC_DAILY_LOSS_CAP_PCT", "0.02"))
+WC_DAILY_LOSS_CAP_PCT = float(os.getenv("WC_DAILY_LOSS_CAP_PCT", "0"))
 # Early-tournament window: relax the high-confidence gate for each team's
 # first WC_EARLY_GAMES group-stage matches (no in-tournament data exists yet,
 # so the corpus can't produce HIGH confidence). Stakes are scaled by
