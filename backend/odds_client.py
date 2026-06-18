@@ -80,6 +80,52 @@ async def fetch_event_btts(
     return data.get("bookmakers", []) or []
 
 
+async def fetch_event_alternate_totals(
+    client: httpx.AsyncClient,
+    sport_key: str,
+    event_id: str,
+    regions: str = "us,us2",
+) -> list[dict]:
+    """Per-fixture alternate totals (1.5, 3.5, 4.5, etc.). Returns bookmaker dicts."""
+    api_key = os.getenv("ODDS_API_KEY", "")
+    if not api_key:
+        return []
+    url = f"{ODDS_API_BASE}/sports/{sport_key}/events/{event_id}/odds"
+    params = {
+        "apiKey": api_key,
+        "regions": regions,
+        "markets": "alternate_totals",
+        "oddsFormat": "decimal",
+    }
+    r = await client.get(url, params=params, timeout=20.0)
+    if not r.is_success:
+        return []
+    data = r.json()
+    return data.get("bookmakers", []) or []
+
+
+def merge_alternate_totals_into_match(match: dict, alt_books: list[dict]) -> None:
+    """Append alternate_totals markets onto the existing bookmakers list (in place).
+    Relabels them as 'totals' so parse_all_markets handles them uniformly."""
+    if not alt_books:
+        return
+    by_key: dict[str, dict] = {bm.get("key"): bm for bm in match.get("bookmakers", []) or []}
+    for src in alt_books:
+        k = src.get("key")
+        alt_markets = [m for m in src.get("markets", []) if m.get("key") == "alternate_totals"]
+        # Relabel as "totals" so the parser picks them up
+        for m in alt_markets:
+            m["key"] = "totals"
+        if not alt_markets:
+            continue
+        if k in by_key:
+            by_key[k].setdefault("markets", []).extend(alt_markets)
+        else:
+            match.setdefault("bookmakers", []).append({
+                "key": k, "title": src.get("title"), "markets": alt_markets,
+            })
+
+
 def merge_btts_into_match(match: dict, btts_books: list[dict]) -> None:
     """Append btts markets onto the existing bookmakers list of `match` (in place)."""
     if not btts_books:
@@ -184,9 +230,9 @@ def parse_all_markets(match: dict) -> dict:
                 if row:
                     btts[title] = row
 
-            elif mkey == "totals":
+            elif mkey in ("totals", "alternate_totals"):
                 # Group outcomes by point — Odds API can emit multiple lines for
-                # the same book under the `totals` market on some sports.
+                # the same book under the `totals` / `alternate_totals` market.
                 by_point: dict[float, dict[str, float]] = {}
                 for o in outcomes:
                     p, n = o.get("price"), (o.get("name") or "").lower()

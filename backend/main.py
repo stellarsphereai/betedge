@@ -466,6 +466,11 @@ async def get_ev_bets(
                 odds_client.merge_btts_into_match(m, btts_books)
             except Exception:
                 pass  # btts is best-effort; absence just means no btts EV rows
+            try:
+                alt_books = await odds_client.fetch_event_alternate_totals(client, sport_key, m["id"])
+                odds_client.merge_alternate_totals_into_match(m, alt_books)
+            except Exception:
+                pass  # alternate totals best-effort
 
     by_pair: dict[tuple[str, str], dict] = {
         _key(m["home_team"], m["away_team"]): m for m in raw
