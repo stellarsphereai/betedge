@@ -33,7 +33,7 @@ log = logging.getLogger("arb.analysis")
 MODEL_NAME = "claude-haiku-4-5"
 DEFAULT_DAILY_CAP = 50
 CACHE_TTL_S = 30 * 60               # 30 minutes
-MAX_OUTPUT_TOKENS = 3000            # Needs room for bet-by-bet (up to 8 bets) + recommendation
+MAX_OUTPUT_TOKENS = 3500            # Needs room for bet-by-bet + two-bet recommendation
 INPUT_PRICE_PER_M = 1.0             # USD per 1M tokens
 OUTPUT_PRICE_PER_M = 5.0
 
@@ -96,7 +96,7 @@ SYSTEM_PROMPT = (
     "6. Daily bet limit — how many bets logged today?\n"
     "7. Do multiple bets on this card tell a consistent story or contradict?\n\n"
     "RULES for your final recommendation:\n"
-    "- Never recommend more than ONE bet per match.\n"
+    "- Recommend up to TWO bets per match (pick the two strongest edges).\n"
     "- There is no daily bet limit. Recommend bets freely based on edge quality.\n"
     "- Never recommend a draw bet unless ALL THREE: edge ≥ 5%, book is "
     "FanDuel or DraftKings, Kelly stake ≥ $15.\n"
@@ -146,21 +146,28 @@ SYSTEM_PROMPT = (
     "═══════════════════════════════\n"
     "MY RECOMMENDATION\n"
     "═══════════════════════════════\n\n"
-    "PLACE THIS BET:\n"
+    "BET 1 (best edge):\n"
     "Market: [market name]\n"
     "Outcome: [outcome]\n"
     "Book: [book name]\n"
     "Odds: [american odds]\n"
     "Stake: $[amount]\n"
     "Why: [one sentence plain English reason]\n\n"
+    "BET 2 (second best):\n"
+    "Market: [market name]\n"
+    "Outcome: [outcome]\n"
+    "Book: [book name]\n"
+    "Odds: [american odds]\n"
+    "Stake: $[amount]\n"
+    "Why: [one sentence plain English reason]\n\n"
+    "If only one bet is worth placing, omit BET 2 and explain why.\n\n"
     "SKIP THESE:\n"
-    "[Market 1]: [one sentence why]\n"
-    "[Market 2]: [one sentence why]\n\n"
+    "[Market]: [one sentence why]\n\n"
     "OVERALL: [one of these three exact options, including emoji]\n"
     "  ✅ BET IT — clear edge, log now\n"
     "  ⚠️ CAUTION — log small or skip\n"
     "  ❌ SKIP ALL — not worth betting this match today\n\n"
-    "If SKIP ALL, replace the PLACE THIS BET block with one sentence "
+    "If SKIP ALL, replace the BET blocks with one sentence "
     "explaining why none of the bets are worth placing today.\n\n"
     "═══════════════════════════════"
 )
@@ -408,8 +415,8 @@ def _build_user_prompt(
         f"{_render_balances_block(book_balances)}\n\n"
         f"Now do the full analysis per the system prompt's structure. "
         f"After analyzing the match, analyze EACH bet listed above, then "
-        f"give ONE clear final recommendation. Apply ALL the rules: never "
-        f"more than one bet per match, never a "
+        f"give your final recommendation (up to two bets). Apply ALL the rules: never "
+        f"more than two bets per match, never a "
         f"draw bet under the strict criteria, label every book sharp/decent/"
         f"soft, never hedge. The final 'MY RECOMMENDATION' section must "
         f"appear exactly as specified in the system prompt with the equals-"
