@@ -33,7 +33,7 @@ log = logging.getLogger("arb.analysis")
 MODEL_NAME = "claude-haiku-4-5"
 DEFAULT_DAILY_CAP = 50
 CACHE_TTL_S = 30 * 60               # 30 minutes
-MAX_OUTPUT_TOKENS = 1500            # ANOMALY FLAGS section was hitting 1024 cap mid-sentence
+MAX_OUTPUT_TOKENS = 3000            # Needs room for bet-by-bet (up to 8 bets) + recommendation
 INPUT_PRICE_PER_M = 1.0             # USD per 1M tokens
 OUTPUT_PRICE_PER_M = 5.0
 
