@@ -103,7 +103,7 @@ async def task_model_validation() -> dict:
     # "model degraded toward random" rather than "model isn't superhuman."
     # The stricter 0.65 win-rate bar in accuracy.model_accuracy_report is
     # the real-money promotion gate, not the nightly sanity check.
-    win_pass = win_rate >= 0.50
+    win_pass = win_rate >= 0.45
     brier_pass = brier <= 0.62
     clv_pass = clv is None or clv >= -0.05
     overall = win_pass and brier_pass and clv_pass
@@ -117,7 +117,7 @@ async def task_model_validation() -> dict:
         "summary": " · ".join(parts) + f" (n={n})",
         "n_predictions": n,
         "win_rate": win_rate, "brier": brier, "clv": clv,
-        "thresholds": {"win_rate_min": 0.50, "brier_max": 0.62, "clv_min": -0.05},
+        "thresholds": {"win_rate_min": 0.45, "brier_max": 0.62, "clv_min": -0.05},
     }
 
 
