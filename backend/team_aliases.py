@@ -74,6 +74,11 @@ _ALIASES = {
     "congo dr": "Congo DR",
     "democratic republic of the congo": "Congo DR",
     "dem rep congo": "Congo DR",
+    "turkey": "Türkiye",
+    "turkiye": "Türkiye",
+    "cape verde": "Cape Verde Islands",
+    "cape verde islands": "Cape Verde Islands",
+    "cabo verde": "Cape Verde Islands",
     "czechia": "Czech Republic",
 }
 
