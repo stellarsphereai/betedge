@@ -219,6 +219,59 @@ async def job_auto_settle_open_bets():
     }
 
 
+async def job_settle_fixtures():
+    """Settle ALL past fixtures (not just ones with open bets). Without this,
+    fixtures without bets stay result=NULL and downstream consumers (rest_days,
+    _wc_matches_played, xG history from settled WC matches) use stale data.
+
+    Runs twice daily: after the nightly sync and at midday."""
+    import httpx
+    import api_football
+    log.info("scheduler: fixture settlement sweep")
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT match_id, home_team, away_team FROM fixtures
+            WHERE result IS NULL AND kickoff_time < datetime('now')
+              AND match_id LIKE 'af-%'
+            """
+        ).fetchall()
+    if not rows:
+        log.info("fixture-settle: no unsettled past fixtures")
+        return {"settled": 0, "checked": 0}
+
+    log.info("fixture-settle: %d unsettled past fixture(s) to check", len(rows))
+    settled = 0
+    async with httpx.AsyncClient() as client:
+        for r in rows:
+            mid = r["match_id"]
+            try:
+                fid = int(mid.removeprefix("af-"))
+                fx = await api_football.fetch_fixture(client, fid)
+            except Exception as e:
+                log.warning("fixture-settle: %s fetch failed: %s", mid, e)
+                continue
+            if not fx:
+                continue
+            status_short = (
+                fx.get("fixture", {}).get("status", {}).get("short") or ""
+            ).upper()
+            g = fx.get("goals", {})
+            hg, ag = g.get("home"), g.get("away")
+            if status_short == "FT" and hg is not None and ag is not None:
+                result = "home" if hg > ag else "away" if ag > hg else "draw"
+                with db() as conn:
+                    conn.execute(
+                        "UPDATE fixtures SET result = ?, home_goals = ?, away_goals = ? WHERE match_id = ?",
+                        (result, int(hg), int(ag), mid),
+                    )
+                log.info("fixture-settle: %s %s vs %s → %s-%s",
+                         mid, r["home_team"], r["away_team"], hg, ag)
+                settled += 1
+    log.info("fixture-settle: settled %d/%d fixtures", settled, len(rows))
+    return {"settled": settled, "checked": len(rows)}
+
+
 async def _wrap(name: str, coro_factory):
     """Adapter — APScheduler wants a no-arg async fn; automation_runner
     wants (name, fn) where fn is also no-arg async."""
@@ -656,6 +709,10 @@ def build() -> AsyncIOScheduler:
         # from that day's results. Also captures any lineup-driven adjustments.
         ("sync_world_cup_midday", _league_sync_job("world_cup"), CronTrigger(hour=12, minute=0, timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
+        # Settle ALL past fixtures (not just ones with bets) so rest_days,
+        # xG history, and _wc_matches_played always use fresh data.
+        ("settle_fixtures",       job_settle_fixtures,           CronTrigger(hour=3,  minute=30, timezone=TIMEZONE)),
+        ("settle_fixtures_midday", job_settle_fixtures,          CronTrigger(hour=12, minute=30, timezone=TIMEZONE)),
         ("real_trade_audit",      job_real_trade_audit,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
         # Spec section 2 — 9-task nightly automation pipeline (May 31 → June 10).
         # All tasks log to automation_log; deferred tasks re-arm automatically
