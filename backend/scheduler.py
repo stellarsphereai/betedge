@@ -268,6 +268,25 @@ async def job_settle_fixtures():
                 log.info("fixture-settle: %s %s vs %s → %s-%s",
                          mid, r["home_team"], r["away_team"], hg, ag)
                 settled += 1
+    # Pre-fetch xG stats for all settled WC fixtures so they're cached
+    # when the next sync runs. Without this, the sync hits rate limits
+    # trying to fetch stats mid-run and falls back to qualifier data.
+    if settled > 0:
+        stats_fetched = 0
+        with db() as conn:
+            wc_settled = conn.execute(
+                "SELECT match_id FROM fixtures WHERE league = 'world_cup' AND result IS NOT NULL AND match_id LIKE 'af-%'"
+            ).fetchall()
+        async with httpx.AsyncClient() as client:
+            for r in wc_settled:
+                fid = int(r["match_id"].removeprefix("af-"))
+                try:
+                    await api_football.fixture_statistics(client, fid, force=False)
+                    stats_fetched += 1
+                except Exception:
+                    pass
+        log.info("fixture-settle: pre-fetched stats for %d settled WC fixtures", stats_fetched)
+
     log.info("fixture-settle: settled %d/%d fixtures", settled, len(rows))
     return {"settled": settled, "checked": len(rows)}
 
@@ -703,16 +722,14 @@ def build() -> AsyncIOScheduler:
         ("sync_ucl",         _league_sync_job("ucl"),       CronTrigger(day_of_week="tue,wed", hour=1, minute=0, timezone=TIMEZONE)),
         ("sync_ucl_final",   _league_sync_job("ucl"),       CronTrigger(year=2026, month=5, day=30, hour=0, minute=0, timezone=TIMEZONE)),
         ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
-        ("sync_world_cup",   _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
-        # Mid-day WC re-sync: after morning matches settle, re-run the model
-        # with fresh xG data so afternoon/evening match predictions benefit
-        # from that day's results. Also captures any lineup-driven adjustments.
-        ("sync_world_cup_midday", _league_sync_job("world_cup"), CronTrigger(hour=12, minute=0, timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
-        # Settle ALL past fixtures (not just ones with bets) so rest_days,
-        # xG history, and _wc_matches_played always use fresh data.
-        ("settle_fixtures",       job_settle_fixtures,           CronTrigger(hour=3,  minute=30, timezone=TIMEZONE)),
-        ("settle_fixtures_midday", job_settle_fixtures,          CronTrigger(hour=12, minute=30, timezone=TIMEZONE)),
+        # Settle ALL past fixtures + pre-fetch their xG stats BEFORE the
+        # WC sync runs, so the model has real data instead of fallbacks.
+        ("settle_fixtures",        job_settle_fixtures,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
+        ("sync_world_cup",         _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
+        # Mid-day: same pattern — settle first, then sync.
+        ("settle_fixtures_midday", job_settle_fixtures,          CronTrigger(hour=11, minute=45, timezone=TIMEZONE)),
+        ("sync_world_cup_midday",  _league_sync_job("world_cup"), CronTrigger(hour=12, minute=0,  timezone=TIMEZONE)),
         ("real_trade_audit",      job_real_trade_audit,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
         # Spec section 2 — 9-task nightly automation pipeline (May 31 → June 10).
         # All tasks log to automation_log; deferred tasks re-arm automatically
