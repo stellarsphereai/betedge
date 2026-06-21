@@ -39,6 +39,10 @@ _last_call_at = 0.0
 # CACHE_TTL_S in .env to change. 6h default = predictions written at 00:00
 # always have fresh fixture/stats data even if cache files exist on disk.
 CACHE_TTL_S = int(os.getenv("CACHE_TTL_S", "21600"))
+# Fixture statistics (xG) are historical and never change once a match
+# finishes. Cache them for 7 days to avoid re-fetching 577 qualifier
+# stats on every sync run (which exhausts the rate limit).
+CACHE_TTL_STATS_S = int(os.getenv("CACHE_TTL_STATS_S", str(7 * 86400)))
 
 
 class PlanError(RuntimeError):
@@ -58,11 +62,12 @@ async def _throttle():
     _last_call_at = time.monotonic()
 
 
-async def _get(client: httpx.AsyncClient, path: str, params: dict, force: bool = False) -> dict:
+async def _get(client: httpx.AsyncClient, path: str, params: dict, force: bool = False, ttl: int | None = None) -> dict:
     cache_path = _cache_key(path, params)
+    effective_ttl = ttl if ttl is not None else CACHE_TTL_S
     if not force and cache_path.exists():
         age = time.time() - cache_path.stat().st_mtime
-        if age < CACHE_TTL_S:
+        if age < effective_ttl:
             return json.loads(cache_path.read_text())
 
     # Pre-call quota gate. Imported lazily to keep module import cycle-free.
@@ -153,7 +158,7 @@ async def team_recent_fixtures(
 
 
 async def fixture_statistics(client: httpx.AsyncClient, fixture_id: int, force: bool = False) -> list[dict]:
-    data = await _get(client, "/fixtures/statistics", {"fixture": fixture_id}, force=force)
+    data = await _get(client, "/fixtures/statistics", {"fixture": fixture_id}, force=force, ttl=CACHE_TTL_STATS_S)
     return data.get("response", []) or []
 
 
