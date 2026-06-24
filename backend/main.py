@@ -73,7 +73,7 @@ MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "0.02"))
 # that locks out further actionable WC bets once breached.
 WC_MIN_EDGE = float(os.getenv("WC_MIN_EDGE", "0.05"))
 WC_MAX_STAKE_PCT = float(os.getenv("WC_MAX_STAKE_PCT", "0.015"))
-WC_HIGH_CONFIDENCE_ONLY = os.getenv("WC_HIGH_CONFIDENCE_ONLY", "true").strip().lower() == "true"
+WC_MIN_CONFIDENCE = os.getenv("WC_MIN_CONFIDENCE", "MEDIUM").strip().upper()
 WC_REQUIRE_MARKET_AGREEMENT = os.getenv("WC_REQUIRE_MARKET_AGREEMENT", "true").strip().lower() == "true"
 # Soft market agreement: instead of hard-blocking bets that disagree with
 # market consensus, allow bets where the model's edge is large enough to
@@ -103,7 +103,7 @@ def _league_risk_config(league: str, base_min_edge: float) -> dict:
         return {
             "min_edge": max(base_min_edge, WC_MIN_EDGE),
             "max_stake_pct": WC_MAX_STAKE_PCT,
-            "high_confidence_only": WC_HIGH_CONFIDENCE_ONLY,
+            "min_confidence": WC_MIN_CONFIDENCE,
             "require_market_agreement": WC_REQUIRE_MARKET_AGREEMENT,
             "daily_loss_cap_pct": WC_DAILY_LOSS_CAP_PCT,
             "real_money": True,
@@ -111,7 +111,7 @@ def _league_risk_config(league: str, base_min_edge: float) -> dict:
     return {
         "min_edge": base_min_edge,
         "max_stake_pct": MAX_STAKE_PCT,
-        "high_confidence_only": False,
+        "min_confidence": None,
         "require_market_agreement": False,
         "daily_loss_cap_pct": None,
         "real_money": False,
@@ -524,13 +524,15 @@ async def get_ev_bets(
             except ValueError:
                 pass
 
-        # WC: only HIGH-confidence predictions clear the gate (the corpus is
-        # too sparse + structurally different to bet real money on MED/LOW).
+        # WC: predictions must meet the minimum confidence level.
         # Exception: each team's first WC_EARLY_GAMES group-stage matches —
         # no in-tournament data exists yet, so HIGH is unreachable. Those
         # bypass the gate but get a stake multiplier downstream.
+        _CONF_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
         early_window = False
-        if risk["high_confidence_only"] and (p["confidence"] or "").upper() != "HIGH":
+        min_conf = risk.get("min_confidence")
+        pred_conf = (p["confidence"] or "").upper()
+        if min_conf and _CONF_RANK.get(pred_conf, -1) < _CONF_RANK.get(min_conf, 0):
             if league == "world_cup":
                 home_played = _wc_matches_played(p["home_team"])
                 away_played = _wc_matches_played(p["away_team"])
@@ -855,7 +857,7 @@ async def get_ev_bets(
             "min_edge": risk["min_edge"],
             "max_stake_pct": risk["max_stake_pct"],
             "real_money": risk["real_money"],
-            "high_confidence_only": risk["high_confidence_only"],
+            "min_confidence": risk["min_confidence"],
             "require_market_agreement": risk["require_market_agreement"],
             "daily_loss_cap_pct": risk["daily_loss_cap_pct"],
             "lockout_reason": lockout_reason,
@@ -2159,7 +2161,7 @@ async def admin_health():
         "wc_safeguards": {
             "min_edge": WC_MIN_EDGE,
             "max_stake_pct": WC_MAX_STAKE_PCT,
-            "high_confidence_only": WC_HIGH_CONFIDENCE_ONLY,
+            "min_confidence": WC_MIN_CONFIDENCE,
             "require_market_agreement": WC_REQUIRE_MARKET_AGREEMENT,
             "daily_loss_cap_pct": WC_DAILY_LOSS_CAP_PCT,
             "wc_params_present": calibrate_engine.has_wc_params(),
