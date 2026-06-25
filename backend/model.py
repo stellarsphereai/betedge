@@ -153,13 +153,22 @@ def _weighted_avg(values: list[float], weights: tuple[float, ...]) -> float:
     return sum(v * x for v, x in zip(values, w)) / sum(w)
 
 
+_SMALL_SAMPLE_THRESHOLD = 3  # teams with fewer games get reduced season-avg weight
+
 def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS) -> tuple[float, float]:
     """Return (attack, defense). Blends time-decayed recent xG with season-long
-    averages when both sides are present (season_blend = weight on recent)."""
+    averages when both sides are present (season_blend = weight on recent).
+
+    When a team has fewer than _SMALL_SAMPLE_THRESHOLD games played, the
+    season average is unreliable (e.g. 2 WC matches → 3.0 goals/game noise).
+    In that case, boost the recent-form weight so the noisy season average
+    doesn't dominate the prediction."""
     recent_for = _weighted_avg(form.xg_for, params.game_weights)
     recent_against = _weighted_avg(form.xg_against, params.game_weights)
     if form.season_avg_for and form.season_avg_against:
         b = params.season_blend
+        if form.games_played < _SMALL_SAMPLE_THRESHOLD:
+            b = 1.0 - (1.0 - b) * (form.games_played / _SMALL_SAMPLE_THRESHOLD)
         return (
             recent_for * b + form.season_avg_for * (1 - b),
             recent_against * b + form.season_avg_against * (1 - b),
