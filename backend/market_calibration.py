@@ -1,7 +1,7 @@
 """Per-market calibration loop (self-cal Pieces 1 + 2 + 3, plus Fix 3).
 
 Nightly at 00:30:
-  - Pull all settled paper bets, group by (market, outcome[, line])
+  - Pull all settled bets (paper + real money), group by (market, outcome[, line])
   - For each bucket: model_avg_pct = mean(model_prob), actual_rate =
     wins / settled
   - calibration_factor = actual_rate / model_avg_pct
@@ -47,8 +47,8 @@ def _min_sample(market: str) -> int:
 
 
 def refresh_factors() -> dict:
-    """Recompute every (market, outcome[, line]) bucket from settled
-    paper bets. Idempotent. Returns a roll-up summary for logging."""
+    """Recompute every (market, outcome[, line]) bucket from all settled
+    bets (paper + real money). Idempotent. Returns a roll-up summary for logging."""
     summary = {"buckets": 0, "applied": 0, "deferred_sample": 0, "deferred_bounds": 0}
     with db() as conn:
         rows = conn.execute(
@@ -65,8 +65,7 @@ def refresh_factors() -> dict:
               b.status                                 AS status
             FROM bets_placed b
             LEFT JOIN model_predictions p ON p.match_id = b.match_id
-            WHERE b.is_paper = 1
-              AND b.status IN ('won','lost')
+            WHERE b.status IN ('won','lost')
               AND b.market IS NOT NULL
             """
         ).fetchall()
