@@ -942,8 +942,8 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             # API. Weighted attack/defense are recomputed here from the same
             # arrays + game_weights so they stay consistent with what the
             # model actually saw.
-            home_atk, home_def = model.team_strengths(home_form, match_params)
-            away_atk, away_def = model.team_strengths(away_form, match_params)
+            home_atk, home_def = model.team_strengths(home_form, match_params, league_id=league_id)
+            away_atk, away_def = model.team_strengths(away_form, match_params, league_id=league_id)
             with db() as conn:
                 conn.execute(
                     """

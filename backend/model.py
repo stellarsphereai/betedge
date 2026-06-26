@@ -154,24 +154,34 @@ def _weighted_avg(values: list[float], weights: tuple[float, ...]) -> float:
 
 
 _SMALL_SAMPLE_THRESHOLD = 3  # teams with fewer games get reduced season-avg weight
+_SEASON_AVG_CLAMP = 2.0      # clamp season avg to [league_avg / clamp, league_avg * clamp]
 
-def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS) -> tuple[float, float]:
+def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS,
+                   league_id: int | None = None) -> tuple[float, float]:
     """Return (attack, defense). Blends time-decayed recent xG with season-long
     averages when both sides are present (season_blend = weight on recent).
 
     When a team has fewer than _SMALL_SAMPLE_THRESHOLD games played, the
     season average is unreliable (e.g. 2 WC matches → 3.0 goals/game noise).
     In that case, boost the recent-form weight so the noisy season average
-    doesn't dominate the prediction."""
+    doesn't dominate the prediction.
+
+    Season averages are also clamped to [league_avg/2, league_avg*2] so
+    extreme values from small tournament samples can't distort predictions."""
     recent_for = _weighted_avg(form.xg_for, params.game_weights)
     recent_against = _weighted_avg(form.xg_against, params.game_weights)
     if form.season_avg_for and form.season_avg_against:
         b = params.season_blend
         if form.games_played < _SMALL_SAMPLE_THRESHOLD:
             b = 1.0 - (1.0 - b) * (form.games_played / _SMALL_SAMPLE_THRESHOLD)
+        avg = league_avg_goals(league_id)
+        lo = avg / _SEASON_AVG_CLAMP
+        hi = avg * _SEASON_AVG_CLAMP
+        sa_for = max(lo, min(hi, form.season_avg_for))
+        sa_against = max(lo, min(hi, form.season_avg_against))
         return (
-            recent_for * b + form.season_avg_for * (1 - b),
-            recent_against * b + form.season_avg_against * (1 - b),
+            recent_for * b + sa_for * (1 - b),
+            recent_against * b + sa_against * (1 - b),
         )
     return (recent_for, recent_against)
 
@@ -204,8 +214,8 @@ def predict(
 ) -> MatchPrediction:
     p = params or DEFAULT_PARAMS
     league_avg = league_avg_goals(league_id)
-    h_atk, h_def = team_strengths(home, p)
-    a_atk, a_def = team_strengths(away, p)
+    h_atk, h_def = team_strengths(home, p, league_id=league_id)
+    a_atk, a_def = team_strengths(away, p, league_id=league_id)
 
     # Stack rest + scorer-out penalties as a single multiplier per team, then
     # floor the combined effect at penalty_floor (default 0.85x base) so an
