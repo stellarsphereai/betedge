@@ -87,6 +87,12 @@ WC_DAILY_LOSS_CAP_PCT = float(os.getenv("WC_DAILY_LOSS_CAP_PCT", "0"))
 # WC_EARLY_STAKE_MULT to compensate for the looser gate.
 WC_EARLY_GAMES = int(os.getenv("WC_EARLY_GAMES", "2"))
 WC_EARLY_STAKE_MULT = float(os.getenv("WC_EARLY_STAKE_MULT", "0.5"))
+# Market-shrinkage: when the model disagrees with market consensus by more than
+# this threshold (pp), blend model prob toward the market. This addresses
+# systematic overconfidence in WC where the model has limited data.
+WC_SHRINKAGE_THRESHOLD = float(os.getenv("WC_SHRINKAGE_THRESHOLD", "0.10"))
+# How much weight to give the market when shrinking (0 = all model, 1 = all market)
+WC_SHRINKAGE_WEIGHT = float(os.getenv("WC_SHRINKAGE_WEIGHT", "0.40"))
 
 LEAGUE_TO_SPORT_KEY = {
     "epl": "soccer_epl",
@@ -511,6 +517,31 @@ async def get_ev_bets(
                 out[outcome] = prob
         return out, meta
 
+    def _shrink_toward_market(
+        model_probs: dict[str, float],
+        market: str,
+        market_line: float | None,
+        offers: dict[str, dict[str, float]],
+    ) -> dict[str, float]:
+        """When the model disagrees with market consensus by more than
+        WC_SHRINKAGE_THRESHOLD, blend the model probability toward the
+        market. Only applies to WC (real-money) bets where the model
+        has limited data and systematic overconfidence."""
+        if league != "world_cup":
+            return model_probs
+        avg = _devig_avg_for_offers(offers)
+        if not avg:
+            return model_probs
+        out = dict(model_probs)
+        for outcome, prob in model_probs.items():
+            mkt = avg.get(outcome)
+            if mkt is None or prob is None:
+                continue
+            gap = abs(prob - mkt)
+            if gap > WC_SHRINKAGE_THRESHOLD:
+                out[outcome] = prob * (1 - WC_SHRINKAGE_WEIGHT) + mkt * WC_SHRINKAGE_WEIGHT
+        return out
+
     bets: list[dict] = []
     for p in preds:
         match = by_pair.get(_key(p["home_team"], p["away_team"]))
@@ -553,6 +584,7 @@ async def get_ev_bets(
         if markets["h2h"]:
             raw = {"home": p["home_win_pct"], "draw": p["draw_pct"], "away": p["away_win_pct"]}
             cal_probs, meta = _apply_cal("h2h", None, raw)
+            cal_probs = _shrink_toward_market(cal_probs, "h2h", None, markets["h2h"])
             cal_meta[("h2h", None)] = meta
             ev_bets += ev_calculator.find_ev_bets_market(
                 market="h2h", market_label=None, market_line=None,
@@ -571,6 +603,7 @@ async def get_ev_bets(
         if markets["btts"] and btts_yes is not None:
             raw = {"yes": btts_yes, "no": 1.0 - btts_yes}
             cal_probs, meta = _apply_cal("btts", None, raw)
+            cal_probs = _shrink_toward_market(cal_probs, "btts", None, markets["btts"])
             cal_meta[("btts", None)] = meta
             ev_bets += ev_calculator.find_ev_bets_market(
                 market="btts", market_label="BTTS", market_line=None,
@@ -595,6 +628,7 @@ async def get_ev_bets(
                     over = sum(matrix[h][a] for h in range(len(matrix)) for a in range(len(matrix[0])) if (h + a) > line)
                     raw = {"over": over, "under": 1.0 - over}
                     cal_probs, meta = _apply_cal("totals", line, raw)
+                    cal_probs = _shrink_toward_market(cal_probs, "totals", line, by_book)
                     cal_meta[("totals", line)] = meta
                     ev_bets += ev_calculator.find_ev_bets_market(
                         market="totals", market_label=f"Over/Under {line}", market_line=line,
