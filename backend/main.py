@@ -73,7 +73,7 @@ MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "0.02"))
 # that locks out further actionable WC bets once breached.
 WC_MIN_EDGE = float(os.getenv("WC_MIN_EDGE", "0.05"))
 WC_MAX_STAKE_PCT = float(os.getenv("WC_MAX_STAKE_PCT", "0.015"))
-WC_MIN_CONFIDENCE = os.getenv("WC_MIN_CONFIDENCE", "MEDIUM").strip().upper()
+WC_MIN_CONFIDENCE = os.getenv("WC_MIN_CONFIDENCE", "LOW").strip().upper()
 WC_REQUIRE_MARKET_AGREEMENT = os.getenv("WC_REQUIRE_MARKET_AGREEMENT", "true").strip().lower() == "true"
 # Soft market agreement: instead of hard-blocking bets that disagree with
 # market consensus, allow bets where the model's edge is large enough to
