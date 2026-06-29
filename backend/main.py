@@ -680,16 +680,19 @@ async def get_ev_bets(
             avg = _devig_avg_for_offers(offers)
             consensus_prob = (avg or {}).get(b.outcome) if avg else None
 
-            # Market-agreement gate (WC): drop bets where the model's pick
-            # disagrees with the de-vigged market consensus on direction —
-            # books are sharper than us on this corpus, so a hard disagreement
-            # is more likely a model error than an inefficiency.
-            # Softened: bets with edge >= WC_MARKET_OVERRIDE_EDGE bypass the
-            # gate — a large enough edge justifies overriding consensus.
+            # Market-agreement gate: skip for WC h2h — nearly all WC
+            # matches are on neutral ground so the home/away distinction
+            # in market consensus is meaningless. The shrinkage layer
+            # already handles overconfidence. Still apply for non-h2h
+            # markets (totals/btts) where the gate compares over/under
+            # or yes/no direction.
             if risk["require_market_agreement"] and avg:
-                market_pick = max(avg, key=avg.get)
-                if market_pick != b.outcome and b.edge < WC_MARKET_OVERRIDE_EDGE:
-                    continue
+                if league == "world_cup" and b.market == "h2h":
+                    pass  # skip gate — neutral venue
+                else:
+                    market_pick = max(avg, key=avg.get)
+                    if market_pick != b.outcome and b.edge < WC_MARKET_OVERRIDE_EDGE:
+                        continue
 
             row = {
                 **b.__dict__,
