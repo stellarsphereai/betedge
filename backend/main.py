@@ -1235,7 +1235,8 @@ async def auto_mark_result_for_bet(bet_id: int):
         raise HTTPException(404, f"fixture {fixture_id} not found in API-Football")
 
     status_short = (fixture.get("fixture", {}).get("status", {}).get("short") or "").upper()
-    if status_short != "FT":
+    _FINISHED = {"FT", "AET", "PEN", "FT_PEN"}
+    if status_short not in _FINISHED:
         long_status = fixture.get("fixture", {}).get("status", {}).get("long") or status_short
         elapsed = fixture.get("fixture", {}).get("status", {}).get("elapsed")
         suffix = f" ({elapsed}')" if elapsed else ""

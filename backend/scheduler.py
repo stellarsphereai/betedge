@@ -192,7 +192,8 @@ async def job_auto_settle_open_bets():
             status_short = (
                 fixture.get("fixture", {}).get("status", {}).get("short") or ""
             ).upper()
-            if status_short != "FT":
+            _FINISHED = {"FT", "AET", "PEN", "FT_PEN"}
+            if status_short not in _FINISHED:
                 skipped_in_progress += 1
                 continue
             home_goals = fixture.get("goals", {}).get("home")
@@ -256,9 +257,10 @@ async def job_settle_fixtures():
             status_short = (
                 fx.get("fixture", {}).get("status", {}).get("short") or ""
             ).upper()
+            _FINISHED = {"FT", "AET", "PEN", "FT_PEN"}
             g = fx.get("goals", {})
             hg, ag = g.get("home"), g.get("away")
-            if status_short == "FT" and hg is not None and ag is not None:
+            if status_short in _FINISHED and hg is not None and ag is not None:
                 result = "home" if hg > ag else "away" if ag > hg else "draw"
                 with db() as conn:
                     conn.execute(
