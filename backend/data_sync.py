@@ -255,7 +255,16 @@ def _is_knockout(round_label: str | None) -> bool:
     if not round_label:
         return False
     r = round_label.lower()
-    return any(k in r for k in ("knockout", "round of", "quarter", "semi", "final"))
+    # "final" alone matches "Final Round" (group stage matchday 3) — require
+    # it to be the WHOLE label or preceded by a space after "semi"/"quarter".
+    # Explicit tokens that unambiguously mean knockout stage:
+    if any(k in r for k in ("knockout", "round of", "quarter-final", "semi-final")):
+        return True
+    # "Final" as a standalone round (e.g. "Final", "The Final") but NOT
+    # "Final Round" or "Group ... Final" which are group stage labels.
+    if "final" in r and "round" not in r and "group" not in r:
+        return True
+    return False
 
 
 def _is_neutral_venue_final(round_label: str | None, league: str) -> bool:
