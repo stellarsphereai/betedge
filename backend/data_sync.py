@@ -832,8 +832,11 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             # tighter and books prior-weight that. Lean more on the season
             # average (0.30 recent, 0.70 season) for these matches.
             match_params = model_params
-            if knockout and league in ("ucl", "uel", "world_cup"):
+            if knockout and league in ("ucl", "uel"):
                 match_params = dataclasses.replace(match_params, season_blend=0.30)
+            # WC excluded — season averages are based on 2-3 games so giving
+            # them 70% weight amplifies noise. The model's small-sample blend
+            # reduction + season avg clamp already handle WC data quality.
             # EPL late-season tightening — by gameweek 30+ the 10-game window
             # captures roughly current shape, but the season baseline still
             # carries Aug–Oct results from before injuries / mid-season form
