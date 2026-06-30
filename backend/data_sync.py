@@ -639,6 +639,10 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 league in ("ucl", "uel", "world_cup")
                 and _is_knockout(this_round)
             )
+            if league == "world_cup":
+                log.info("round-check: %s v %s round=%r knockout=%s",
+                         fx["teams"]["home"]["name"], fx["teams"]["away"]["name"],
+                         this_round, is_tournament_knockout)
             home_xg_for, home_xg_against, home_xg_info = _team_xg_history(
                 home_id, team_recent.get(home_id, []), stats_cache,
                 knockout_only_for_ucl=is_tournament_knockout,
