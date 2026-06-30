@@ -533,18 +533,21 @@ async def get_ev_bets(
         if not avg:
             return model_probs
         out = dict(model_probs)
-        import logging as _log
         for outcome, prob in model_probs.items():
             mkt = avg.get(outcome)
             if mkt is None or prob is None:
                 continue
             gap = abs(prob - mkt)
             if gap > WC_SHRINKAGE_THRESHOLD:
-                shrunk = prob * (1 - WC_SHRINKAGE_WEIGHT) + mkt * WC_SHRINKAGE_WEIGHT
-                _log.getLogger("arb.shrinkage").info(
-                    "shrink %s/%s/%s: %.3f -> %.3f (mkt=%.3f gap=%.3f)",
-                    market, outcome, market_line, prob, shrunk, mkt, gap)
-                out[outcome] = shrunk
+                # Progressive shrinkage: larger gaps get heavier market weight
+                # 10-20pp gap → 40% market, 20-30pp → 55%, 30+pp → 65%
+                if gap > 0.30:
+                    weight = 0.65
+                elif gap > 0.20:
+                    weight = 0.55
+                else:
+                    weight = WC_SHRINKAGE_WEIGHT
+                out[outcome] = prob * (1 - weight) + mkt * weight
         return out
 
     bets: list[dict] = []
