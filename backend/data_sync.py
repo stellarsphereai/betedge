@@ -252,17 +252,20 @@ def _epl_gameweek(round_label: str | None) -> int | None:
 
 
 def _is_knockout(round_label: str | None) -> bool:
+    """Detect knockout-stage rounds. Must not false-positive on group stage
+    labels like '3rd Round', 'Final Round', 'Round 3', 'Group C - 3' etc."""
     if not round_label:
         return False
-    r = round_label.lower()
-    # "final" alone matches "Final Round" (group stage matchday 3) — require
-    # it to be the WHOLE label or preceded by a space after "semi"/"quarter".
-    # Explicit tokens that unambiguously mean knockout stage:
-    if any(k in r for k in ("knockout", "round of", "quarter-final", "semi-final")):
+    r = round_label.lower().strip()
+    # Explicit group-stage patterns — reject early
+    if "group" in r:
+        return False
+    # Unambiguous knockout tokens
+    if any(k in r for k in ("round of 16", "round of 32", "round of 48",
+                             "quarter-final", "semi-final", "knockout")):
         return True
-    # "Final" as a standalone round (e.g. "Final", "The Final") but NOT
-    # "Final Round" or "Group ... Final" which are group stage labels.
-    if "final" in r and "round" not in r and "group" not in r:
+    # "Final" as standalone (not "Final Round", "3rd Round", etc.)
+    if r in ("final", "the final", "grand final"):
         return True
     return False
 
