@@ -604,7 +604,11 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
             import team_ratings
             ratings_rows = []
             for tid in team_ids:
-                f, a = season_avg.get(tid, (None, None))
+                # For WC, prefer qualifier-corpus averages over noisy API stats
+                if league == "world_cup" and wc_goal_avg and tid in wc_goal_avg:
+                    f, a = wc_goal_avg[tid]
+                else:
+                    f, a = season_avg.get(tid, (None, None))
                 if f is None or a is None:
                     continue
                 ratings_rows.append({
@@ -710,8 +714,21 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 continue
 
             kickoff_iso = fx["fixture"]["date"]
-            h_season_for, h_season_against = season_avg.get(home_id, (None, None))
-            a_season_for, a_season_against = season_avg.get(away_id, (None, None))
+            # For WC, use qualifier-corpus-based averages (wc_goal_avg) as the
+            # season baseline instead of the noisy 2-3 game API stats. The
+            # qualifier corpus has 5-15 competitive matches per team with
+            # confederation-strength discounts already applied — far more
+            # reliable than a 2-game WC season average.
+            if league == "world_cup" and wc_goal_avg:
+                hga = wc_goal_avg.get(home_id)
+                aga = wc_goal_avg.get(away_id)
+                h_season_for = hga[0] if hga else None
+                h_season_against = hga[1] if hga else None
+                a_season_for = aga[0] if aga else None
+                a_season_against = aga[1] if aga else None
+            else:
+                h_season_for, h_season_against = season_avg.get(home_id, (None, None))
+                a_season_for, a_season_against = season_avg.get(away_id, (None, None))
             # Fix A part 2 (now also covers UEL + WC knockouts): for any
             # tournament knockout match, the season aggregate is dominated
             # by group-stage results where elite teams ran up scores

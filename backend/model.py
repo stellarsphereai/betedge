@@ -297,6 +297,20 @@ def predict(
             away_win += leak * (away_win / denom)
         draw = damped
 
+    # Neutral-venue draw inflation — WC matches on neutral ground
+    # historically produce ~28% draws vs Poisson model's typical 20-25%.
+    # When home_gamma is 1.0 (neutral venue), inflate draw probability
+    # by transferring mass from home_win and away_win proportionally.
+    _NEUTRAL_DRAW_BOOST = 1.12  # +12% draw inflation
+    if not knockout and p.home_gamma == 1.0:
+        boosted = min(draw * _NEUTRAL_DRAW_BOOST, 0.50)  # cap at 50%
+        added = boosted - draw
+        if added > 0 and (home_win + away_win) > 0:
+            home_share = home_win / (home_win + away_win)
+            home_win -= added * home_share
+            away_win -= added * (1 - home_share)
+            draw = boosted
+
     # Confidence rating reflects DATA quality, not roster quality. Top-scorer-
     # out is already priced into the prediction via injured_scorer_penalty
     # (-6% on attack), so don't double-count it here. A 3-day rest difference
@@ -334,6 +348,14 @@ def predict(
     elif home_xg < 1.00:
         btts_yes *= 0.85
         btts_low_xg_adjustment_applied = True
+    # Fix 4 — global BTTS discount. The Poisson independence assumption
+    # systematically overstates BTTS Yes (game state, tactics, and
+    # defensive adjustments after conceding are not modeled). Settled
+    # bets show 31% BTTS win rate vs model predictions of ~50-60%.
+    # Apply a flat 0.85x discount on top of the low-xG dampener.
+    _BTTS_GLOBAL_DISCOUNT = 0.85
+    btts_yes *= _BTTS_GLOBAL_DISCOUNT
+
     btts_yes = max(0.0, min(1.0, btts_yes))
 
     return MatchPrediction(
