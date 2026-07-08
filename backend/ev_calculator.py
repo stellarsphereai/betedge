@@ -33,15 +33,60 @@ class EVBet:
     market_line: float | None = None
 
 
+def _shin_z(implied: list[float], tol: float = 1e-8, max_iter: int = 100) -> float:
+    """Solve for Shin's insider-trading parameter z via bisection.
+
+    Given raw implied probabilities (summing to >1 due to vig), find z in
+    (0, 1) such that  sum( sqrt(z**2 + 4*(1-z)*p_i/s) - z ) / (2*(1-z)) == 1
+    where s = sum(p_i).
+    """
+    n = len(implied)
+    s = sum(implied)
+    if n == 0 or s <= 0:
+        return 0.0
+
+    def _residual(z: float) -> float:
+        total = 0.0
+        denom = 2.0 * (1.0 - z)
+        for p in implied:
+            total += ((z ** 2 + 4.0 * (1.0 - z) * p / s) ** 0.5 - z) / denom
+        return total - 1.0
+
+    lo, hi = 1e-12, 1.0 - 1e-12
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2.0
+        if _residual(mid) > 0:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < tol:
+            break
+    return (lo + hi) / 2.0
+
+
 def remove_vig(odds: dict[str, float]) -> dict[str, float]:
-    """Proportional de-vig within a single bookmaker's three outcomes."""
+    """Shin de-vig: allocates more vig to favorites than longshots.
+
+    Falls back to proportional de-vig for 2-way markets (btts, totals)
+    where Shin's model adds little benefit.
+    """
     if not odds:
         return {}
     implied = {k: 1.0 / v for k, v in odds.items() if v and v > 1.0}
     s = sum(implied.values())
     if s <= 0:
         return {}
-    return {k: v / s for k, v in implied.items()}
+    # For 2-way markets, proportional is fine
+    if len(implied) <= 2:
+        return {k: v / s for k, v in implied.items()}
+    # Shin de-vig for 3-way markets (h2h)
+    imp_list = list(implied.values())
+    z = _shin_z(imp_list)
+    result: dict[str, float] = {}
+    denom = 2.0 * (1.0 - z)
+    for k, p in implied.items():
+        result[k] = ((z ** 2 + 4.0 * (1.0 - z) * p / s) ** 0.5 - z) / denom
+    return result
 
 
 def find_ev_bets(

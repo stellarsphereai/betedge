@@ -22,7 +22,7 @@ from typing import Optional
 
 from database import db
 
-CASH_MIN_EDGE = 0.05
+CASH_MIN_EDGE = 0.10
 DAILY_CASH_LOSS_CAP_USD = 50.0
 RESTRICTED_CASH_MARKETS = {"btts", "totals"}        # whole markets blocked
 RESTRICTED_CASH_OUTCOMES = {"draw"}                 # h2h draw blocked
