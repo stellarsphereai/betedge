@@ -878,16 +878,16 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 blend_overridden = True
             # Neutral-venue override — every WC 2026 match is at a neutral
             # venue (USA/Canada/Mexico). The nominal "home" side in FIFA's
-            # designation gets no real crowd/travel advantage, so override
-            # home_gamma to 1.0. UCL/UEL finals also get this treatment.
-            # Host nations (USA, Canada, Mexico) get a small residual
-            # gamma (1.08) since they do have genuine home crowds.
+            # designation gets a small residual gamma (1.05) to account for
+            # observed home-side advantage in WC neutral matches.
+            # Host nations (USA, Canada, Mexico) keep a higher gamma (1.08)
+            # since they have genuine home crowds.
             if league == "world_cup":
                 home_name = team_aliases.canonical(fx["teams"]["home"]["name"])
                 if home_name in ("USA", "Canada", "Mexico"):
                     match_params = dataclasses.replace(match_params, home_gamma=1.08)
                 else:
-                    match_params = dataclasses.replace(match_params, home_gamma=1.0)
+                    match_params = dataclasses.replace(match_params, home_gamma=1.05)
             elif _is_neutral_venue_final(this_round, league):
                 match_params = dataclasses.replace(match_params, home_gamma=1.0)
             blend_used = f"{int(round(match_params.season_blend*100))}/{int(round((1-match_params.season_blend)*100))}"

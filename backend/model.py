@@ -301,8 +301,8 @@ def predict(
     # historically produce ~28% draws vs Poisson model's typical 20-25%.
     # When home_gamma is 1.0 (neutral venue), inflate draw probability
     # by transferring mass from home_win and away_win proportionally.
-    _NEUTRAL_DRAW_BOOST = 1.12  # +12% draw inflation
-    if not knockout and p.home_gamma == 1.0:
+    _NEUTRAL_DRAW_BOOST = 1.08  # +8% draw inflation (reduced from 12% after WC home-bias recal)
+    if not knockout and p.home_gamma <= 1.05:
         boosted = min(draw * _NEUTRAL_DRAW_BOOST, 0.50)  # cap at 50%
         added = boosted - draw
         if added > 0 and (home_win + away_win) > 0:

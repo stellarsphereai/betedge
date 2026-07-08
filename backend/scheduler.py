@@ -663,7 +663,8 @@ async def job_daily_status_email():
     log.info("scheduler: daily status email")
     try:
         from datetime import datetime as _dt
-        ny_now = _dt.now(TIMEZONE)
+        from zoneinfo import ZoneInfo
+        ny_now = _dt.now(ZoneInfo(TIMEZONE))
         today_short = ny_now.strftime("%b ") + str(ny_now.day)
         # We want today in the box's clock terms. cron_log uses datetime('now')
         # which is UTC, so a 23:58 NY job runs at 03:58/04:58 UTC the NEXT day.
