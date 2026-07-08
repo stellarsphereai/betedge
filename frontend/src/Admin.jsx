@@ -308,7 +308,7 @@ export default function Admin() {
           manual sync uses ~30-50 calls of today's quota.
         </p>
         <div className="flex flex-wrap gap-2">
-          {['epl', 'ucl', 'uel', 'world_cup'].map(l => (
+          {['epl', 'ucl', 'uel', 'world_cup', 'la_liga'].map(l => (
             <button
               key={l}
               onClick={() => manualSync(l, true)}

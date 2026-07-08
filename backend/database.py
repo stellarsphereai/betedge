@@ -563,6 +563,7 @@ LEAGUE_CONFIG_SEED: list[tuple] = [
     ("ucl",        2, "UEFA Champions League", 1.25, 0.50, 0.50, 0.12, 0.15),
     ("uel",        3, "UEFA Europa League",    1.28, 0.60, 0.40, 0.15, 0.20),
     ("world_cup",  1, "FIFA World Cup",        1.20, 0.70, 0.30, 0.10, 0.15),
+    ("la_liga",  140, "La Liga",               1.30, 0.60, 0.40, 0.15, 0.20),
 ]
 
 

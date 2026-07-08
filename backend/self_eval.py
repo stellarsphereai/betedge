@@ -33,6 +33,7 @@ LEAGUE_TO_API_FOOTBALL = {
     "ucl": 2,
     "uel": 3,
     "world_cup": api_football.WORLD_CUP_LEAGUE_ID,
+    "la_liga": 140,
 }
 
 BIAS_MIN_SAMPLE = 10            # min results-per-league before any bias check fires

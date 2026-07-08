@@ -32,6 +32,7 @@ LEAGUE_TO_SPORT_KEY = {
     "ucl": "soccer_uefa_champs_league",
     "uel": "soccer_uefa_europa_league",
     "world_cup": "soccer_fifa_world_cup",
+    "la_liga": "soccer_spain_la_liga",
 }
 
 

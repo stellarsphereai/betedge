@@ -40,6 +40,7 @@ LEAGUE_TO_SPORT_KEY = {
     "ucl": "soccer_uefa_champs_league",
     "uel": "soccer_uefa_europa_league",
     "world_cup": "soccer_fifa_world_cup",
+    "la_liga": "soccer_spain_la_liga",
 }
 
 _scheduler: AsyncIOScheduler | None = None
@@ -612,6 +613,7 @@ _JOB_LABELS = {
     "sync_ucl_final":       "UCL Final sync",
     "sync_uel":             "Europa League sync",
     "sync_world_cup":       "World Cup sync",
+    "sync_la_liga":         "La Liga sync",
     "morning_ev":           "Morning EV pre-warm",
     "morning_digest":       "Morning digest email",
     "closing_and_pnl":      "Closing lines + daily P&L + self-eval",
@@ -725,6 +727,7 @@ def build() -> AsyncIOScheduler:
         ("sync_ucl",         _league_sync_job("ucl"),       CronTrigger(day_of_week="tue,wed", hour=1, minute=0, timezone=TIMEZONE)),
         ("sync_ucl_final",   _league_sync_job("ucl"),       CronTrigger(year=2026, month=5, day=30, hour=0, minute=0, timezone=TIMEZONE)),
         ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
+        ("sync_la_liga",     _league_sync_job("la_liga"),   CronTrigger(hour=0,  minute=30, timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
         # Settle ALL past fixtures + pre-fetch their xG stats BEFORE the
         # WC sync runs, so the model has real data instead of fallbacks.
