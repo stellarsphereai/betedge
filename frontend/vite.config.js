@@ -7,7 +7,8 @@ const proxy = Object.fromEntries(
   ['/predictions','/ev-bets','/bets','/stats','/fixtures','/run-model',
    '/digest-preview','/send-digest','/backtest','/backtest-result','/sync-data',
    '/admin/sync','/admin/scheduler','/admin/health',
-   '/quota','/scheduler'
+   '/quota','/scheduler',
+   '/best-bets','/anomalies','/book-balances','/model-health','/portfolio','/restrictions'
   ].map(p => [p, { target: 'http://localhost:8002', timeout: 0, proxyTimeout: 0 }])
 )
 
