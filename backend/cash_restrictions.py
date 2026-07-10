@@ -23,6 +23,7 @@ from typing import Optional
 from database import db
 
 CASH_MIN_EDGE = 0.10
+CASH_MIN_EDGE_WC = 0.05
 DAILY_CASH_LOSS_CAP_USD = 50.0
 RESTRICTED_CASH_MARKETS = {"btts", "totals"}        # whole markets blocked
 RESTRICTED_CASH_OUTCOMES = {"draw"}                 # h2h draw blocked
@@ -58,13 +59,15 @@ def is_market_restricted(
     return False
 
 
-def edge_below_cash_minimum(edge: Optional[float]) -> bool:
-    """Spec B — cash requires edge >= 6%. Tolerance of 0.0005 so a bet
-    that displays as '6.0%' but is stored as 0.05996 still clears the gate
-    (frontend rounds for display)."""
+def edge_below_cash_minimum(edge: Optional[float], league: Optional[str] = None) -> bool:
+    """Spec B — cash requires edge >= min threshold. WC uses a lower
+    threshold (5%) since the tournament window is short. Tolerance of
+    0.0005 so a bet that displays as '6.0%' but is stored as 0.05996
+    still clears the gate (frontend rounds for display)."""
     if edge is None:
         return True
-    return float(edge) < (CASH_MIN_EDGE - 0.0005)
+    min_edge = CASH_MIN_EDGE_WC if (league or "").lower() == "world_cup" else CASH_MIN_EDGE
+    return float(edge) < (min_edge - 0.0005)
 
 
 def todays_cash_pnl() -> float:
@@ -203,9 +206,11 @@ def check_cash_eligibility(bet: dict) -> tuple[bool, str]:
             "model is calibrated on these markets — paper trade only"
         )
     # B — min edge
-    if edge_below_cash_minimum(bet.get("edge")):
+    league = bet.get("league")
+    if edge_below_cash_minimum(bet.get("edge"), league=league):
+        min_edge = CASH_MIN_EDGE_WC if (league or "").lower() == "world_cup" else CASH_MIN_EDGE
         return False, (
-            f"Edge {(bet.get('edge') or 0)*100:.1f}% below the {CASH_MIN_EDGE*100:.0f}% "
+            f"Edge {(bet.get('edge') or 0)*100:.1f}% below the {min_edge*100:.0f}% "
             f"cash minimum — too thin for real money at this stage of validation"
         )
     return True, ""
