@@ -125,7 +125,7 @@ async def _fetch_finished_today(client: httpx.AsyncClient, league: str, today: s
         return []
     return [
         fx for fx in fixtures
-        if (fx.get("fixture", {}).get("status", {}).get("short") or "") == "FT"
+        if (fx.get("fixture", {}).get("status", {}).get("short") or "") in ("FT", "AET", "PEN")
     ]
 
 
@@ -147,7 +147,13 @@ async def log_results_for_league(league: str, today: str | None = None) -> dict:
     for fx in finished:
         fid = fx["fixture"]["id"]
         match_id = f"af-{fid}"
-        g = fx.get("goals") or {}
+        # Use fulltime (90 min) score for 3-way outcome evaluation.
+        # fx["goals"] includes extra time; fx["score"]["fulltime"] is 90 min only.
+        ft = (fx.get("score") or {}).get("fulltime") or {}
+        g = {"home": ft.get("home"), "away": ft.get("away")}
+        # Fallback to goals if fulltime score not available (older API responses)
+        if g["home"] is None or g["away"] is None:
+            g = fx.get("goals") or {}
         actual = _outcome_from_score(g.get("home"), g.get("away"))
         if actual is None:
             continue
