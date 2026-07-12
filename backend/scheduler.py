@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 import api_quota
 import calibrate
@@ -497,6 +498,18 @@ async def job_real_trade_audit():
         return None
 
 
+async def job_pre_kickoff_clv():
+    """Every 30 min — capture closing lines from the LIVE odds API for bets
+    kicking off within 45 minutes. Covers alternate totals (3.5, 4.5, etc.)
+    and BTTS that the historical API misses."""
+    try:
+        result = await clv_tracker.sweep_pre_kickoff_closing_lines(LEAGUE_TO_SPORT_KEY)
+        if result["captured"] or result["errored"]:
+            log.info("scheduler: pre-kickoff CLV: %s", result)
+    except Exception:
+        log.exception("scheduler: pre-kickoff CLV sweep crashed")
+
+
 async def job_closing_lines_and_pnl():
     """23:55 NY: sweep closing lines, snapshot P&L, then run the self-eval
     pipeline (result logging + 5 bias checks per league). Each step wrapped so
@@ -626,6 +639,7 @@ _JOB_LABELS = {
     "sync_uel":             "Europa League sync",
     "sync_world_cup":       "World Cup sync",
     "sync_la_liga":         "La Liga sync",
+    "pre_kickoff_clv":      "Pre-kickoff CLV capture (live odds)",
     "morning_ev":           "Morning EV pre-warm",
     "morning_digest":       "Morning digest email",
     "closing_and_pnl":      "Closing lines + daily P&L + self-eval",
@@ -769,6 +783,7 @@ def build() -> AsyncIOScheduler:
         ("morning_report",                 job_morning_report,                 CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_digest",        job_morning_digest,            CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
+        ("pre_kickoff_clv",       job_pre_kickoff_clv,           IntervalTrigger(minutes=30)),
         ("closing_and_pnl",       job_closing_lines_and_pnl,     CronTrigger(hour=23, minute=55, timezone=TIMEZONE)),
         # End-of-day pass/fail summary email — runs 3 min after closing_and_pnl
         # so the last 'real' job's outcome is in the cron_log it reads from.

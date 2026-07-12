@@ -145,6 +145,183 @@ async def sweep_closing_lines(league_to_sport_key: dict[str, str]) -> dict:
     }
 
 
+async def sweep_pre_kickoff_closing_lines(league_to_sport_key: dict[str, str]) -> dict:
+    """Capture closing lines ~30 min before kickoff using the LIVE odds API.
+
+    The historical API only carries primary totals (2.5) and often misses
+    alternate lines (1.5, 3.5, 4.5+) and BTTS. The live API has all markets
+    including alternate_totals and btts, but is only available pre-kickoff.
+
+    This sweep targets bets whose kickoff is within the next 45 minutes and
+    whose closing_odds is still null. It fetches live odds for the sport,
+    then per-event alternate_totals and btts as needed.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    import httpx
+    import odds_client
+    from team_aliases import normalize_key
+
+    now = datetime.now(timezone.utc)
+    window_start = now
+    window_end = now + timedelta(minutes=45)
+    captured = 0
+    skipped: list[dict] = []
+    errored: list[dict] = []
+
+    with db() as conn:
+        targets = conn.execute(
+            """
+            SELECT b.id, b.home_team, b.away_team, b.market, b.bet_type,
+                   b.market_line, b.book, b.odds_at_placement,
+                   f.kickoff_time, f.league, f.match_id
+            FROM bets_placed b
+            JOIN fixtures f ON f.match_id = b.match_id
+            WHERE b.closing_odds IS NULL
+              AND f.kickoff_time IS NOT NULL
+            """,
+        ).fetchall()
+
+    # Filter to bets kicking off within the window
+    upcoming: list[dict] = []
+    for t in targets:
+        try:
+            ko = datetime.fromisoformat(t["kickoff_time"].replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+        if window_start <= ko <= window_end:
+            upcoming.append(dict(t))
+
+    if not upcoming:
+        return {"captured": 0, "skipped": 0, "errored": 0, "checked": 0}
+
+    # Group by sport_key to minimize API calls
+    by_sport: dict[str, list[dict]] = {}
+    for bet in upcoming:
+        sk = league_to_sport_key.get((bet["league"] or "").lower())
+        if not sk:
+            skipped.append({"bet_id": bet["id"], "reason": f"no sport_key for {bet['league']}"})
+            continue
+        by_sport.setdefault(sk, []).append(bet)
+
+    def _norm_book(s):
+        return (s or "").lower().replace(" ", "").replace(".", "")
+
+    async with httpx.AsyncClient() as client:
+        for sport_key, bets in by_sport.items():
+            try:
+                # Fetch live h2h + totals (primary line)
+                live_matches = await odds_client.fetch_odds(client, sport_key)
+            except Exception as e:
+                for b in bets:
+                    errored.append({"bet_id": b["id"], "error": str(e)[:120]})
+                continue
+
+            # Index live matches by normalized team names
+            match_index: dict[tuple[str, str], dict] = {}
+            for m in live_matches:
+                hk = normalize_key(m.get("home_team", ""))
+                ak = normalize_key(m.get("away_team", ""))
+                match_index[(hk, ak)] = m
+
+            # Collect event_ids that need alternate_totals or btts
+            needs_alt_totals: set[str] = set()
+            needs_btts: set[str] = set()
+            for b in bets:
+                mk = (b["market"] or "h2h").lower()
+                hk = normalize_key(b["home_team"])
+                ak = normalize_key(b["away_team"])
+                match = match_index.get((hk, ak))
+                if not match:
+                    continue
+                eid = match.get("id")
+                if not eid:
+                    continue
+                if mk == "totals" and b["market_line"] is not None and abs(float(b["market_line"]) - 2.5) > 0.01:
+                    needs_alt_totals.add(eid)
+                if mk == "btts":
+                    needs_btts.add(eid)
+
+            # Fetch alternate totals and btts for events that need them
+            alt_totals_by_event: dict[str, list[dict]] = {}
+            btts_by_event: dict[str, list[dict]] = {}
+            for eid in needs_alt_totals:
+                try:
+                    alt = await odds_client.fetch_event_alternate_totals(client, sport_key, eid)
+                    alt_totals_by_event[eid] = alt
+                except Exception:
+                    pass
+            for eid in needs_btts:
+                try:
+                    bt = await odds_client.fetch_event_btts(client, sport_key, eid)
+                    btts_by_event[eid] = bt
+                except Exception:
+                    pass
+
+            # Now match each bet to its closing price
+            for b in bets:
+                hk = normalize_key(b["home_team"])
+                ak = normalize_key(b["away_team"])
+                match = match_index.get((hk, ak))
+                if not match:
+                    skipped.append({"bet_id": b["id"], "reason": "match not in live odds"})
+                    continue
+
+                mk = (b["market"] or "h2h").lower()
+                desired_book = _norm_book(b["book"])
+                eid = match.get("id")
+
+                # Build the bookmaker list to search
+                search_bookmakers = list(match.get("bookmakers", []) or [])
+                if mk == "totals" and eid and eid in alt_totals_by_event:
+                    # Merge alternate totals — relabel as "totals" for matching
+                    for bm in alt_totals_by_event[eid]:
+                        for mkt in bm.get("markets", []):
+                            if mkt.get("key") == "alternate_totals":
+                                mkt["key"] = "totals"
+                        search_bookmakers.append(bm)
+                if mk == "btts" and eid and eid in btts_by_event:
+                    search_bookmakers.extend(btts_by_event[eid])
+
+                closing_price = None
+                for bm in search_bookmakers:
+                    if desired_book not in (_norm_book(bm.get("title")), _norm_book(bm.get("key"))):
+                        continue
+                    for mkt in bm.get("markets", []) or []:
+                        if mkt.get("key") != mk:
+                            continue
+                        for o in mkt.get("outcomes", []) or []:
+                            price = o.get("price")
+                            if not isinstance(price, (int, float)):
+                                continue
+                            if not _outcome_matches(b, o, match):
+                                continue
+                            closing_price = float(price)
+                            break
+
+                if closing_price is None:
+                    skipped.append({
+                        "bet_id": b["id"],
+                        "reason": f"no live price for {b['book']} / {mk}:{b['bet_type']}"
+                                  + (f" line={b['market_line']}" if b["market_line"] is not None else ""),
+                    })
+                    continue
+
+                try:
+                    set_closing(b["id"], closing_price)
+                    captured += 1
+                except Exception as e:
+                    errored.append({"bet_id": b["id"], "error": str(e)[:120]})
+
+    return {
+        "captured": captured,
+        "skipped": len(skipped),
+        "errored": len(errored),
+        "checked": len(upcoming),
+        "details": {"skipped": skipped[:10], "errored": errored[:10]},
+    }
+
+
 def _outcome_matches(bet, outcome: dict, target_match: dict) -> bool:
     """Decide whether an Odds API outcome row matches the bet's selection.
     `bet` may be a sqlite3.Row OR a dict — we use bracket access throughout."""
