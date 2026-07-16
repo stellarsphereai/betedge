@@ -25,8 +25,8 @@ from database import db
 CASH_MIN_EDGE = 0.10
 CASH_MIN_EDGE_WC = 0.05
 DAILY_CASH_LOSS_CAP_USD = 50.0
-RESTRICTED_CASH_MARKETS = {"btts", "totals"}        # whole markets blocked
-RESTRICTED_CASH_OUTCOMES = {"draw"}                 # h2h draw blocked
+RESTRICTED_CASH_MARKETS = {"btts"}                   # BTTS blocked on cash
+RESTRICTED_CASH_OUTCOMES = {"draw", "over"}          # h2h draw + totals over blocked
 GOAL_MARKETS = {"btts", "totals"}
 UNLOCK_MIN_PAPER_GOAL_BETS = 20
 UNLOCK_MIN_PAPER_GOAL_WINRATE = 0.50
@@ -54,7 +54,9 @@ def is_market_restricted(
     o = (outcome or "").lower()
     if m in RESTRICTED_CASH_MARKETS:
         return True
-    if m == "h2h" and o in RESTRICTED_CASH_OUTCOMES:
+    if m == "h2h" and o == "draw":
+        return True
+    if m == "totals" and o == "over":
         return True
     return False
 
