@@ -79,6 +79,57 @@ async def job_morning_ev():
                 log.warning("ev pre-warm %s failed: %s", league, e)
 
 
+async def job_auto_paper_bets():
+    """06:15 NY: auto-place paper bets for restricted markets (BTTS, totals over)
+    so the unlock gate (20 settled, 50%+ win rate) can fill up without manual clicks.
+    Only places paper bets — never cash. Idempotent via log_bet's dedup on
+    (match_id, market, market_line, bet_type) for open bets."""
+    log.info("scheduler: auto-paper sweep")
+    import httpx
+    AUTO_PAPER_MARKETS = {
+        ("btts", "yes"), ("btts", "no"),
+        ("totals", "over"),
+    }
+    placed = 0
+    skipped = 0
+    errors = 0
+    async with httpx.AsyncClient(base_url="http://127.0.0.1:8002", timeout=30.0) as c:
+        for league in LEAGUE_TO_SPORT_KEY:
+            try:
+                resp = await c.get(f"/ev-bets?league={league}")
+                data = resp.json()
+            except Exception as e:
+                log.warning("auto-paper: %s ev-bets fetch failed: %s", league, e)
+                errors += 1
+                continue
+            for bet in data.get("bets", []):
+                market = (bet.get("market") or "").lower()
+                outcome = (bet.get("outcome") or "").lower()
+                if (market, outcome) not in AUTO_PAPER_MARKETS:
+                    continue
+                try:
+                    clv_tracker.log_bet(
+                        match_id=bet["match_id"],
+                        home_team=bet["home_team"],
+                        away_team=bet["away_team"],
+                        bet_type=outcome,
+                        book=bet.get("best_book", ""),
+                        odds_at_placement=bet.get("best_odds", 0),
+                        stake=bet.get("stake", 0) or bet.get("kelly_stake_full", 0),
+                        edge_at_placement=bet.get("edge", 0),
+                        is_paper=True,
+                        market=market,
+                        market_line=bet.get("market_line"),
+                    )
+                    placed += 1
+                except Exception as e:
+                    log.warning("auto-paper: failed to log %s %s:%s: %s",
+                                bet.get("match_id"), market, outcome, e)
+                    errors += 1
+    log.info("auto-paper: placed %d, skipped %d, errors %d", placed, skipped, errors)
+    return {"placed": placed, "skipped": skipped, "errors": errors}
+
+
 async def job_morning_digest():
     """08:00 NY: render and send the digest email."""
     log.info("scheduler: 08:00 morning digest")
@@ -640,6 +691,7 @@ _JOB_LABELS = {
     "sync_world_cup":       "World Cup sync",
     "sync_la_liga":         "La Liga sync",
     "pre_kickoff_clv":      "Pre-kickoff CLV capture (live odds)",
+    "auto_paper_bets":      "Auto-place paper bets (BTTS + totals over)",
     "morning_ev":           "Morning EV pre-warm",
     "morning_digest":       "Morning digest email",
     "closing_and_pnl":      "Closing lines + daily P&L + self-eval",
@@ -782,6 +834,7 @@ def build() -> AsyncIOScheduler:
         ("consec_failure_alert",           job_consec_failure_alert,           CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_report",                 job_morning_report,                 CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
+        ("auto_paper_bets",       job_auto_paper_bets,           CronTrigger(hour=6,  minute=15, timezone=TIMEZONE)),
         ("morning_digest",        job_morning_digest,            CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("pre_kickoff_clv",       job_pre_kickoff_clv,           IntervalTrigger(minutes=30)),
         ("closing_and_pnl",       job_closing_lines_and_pnl,     CronTrigger(hour=23, minute=55, timezone=TIMEZONE)),

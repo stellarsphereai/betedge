@@ -52,11 +52,14 @@ def is_market_restricted(
         return False
     m = (market or "h2h").lower()
     o = (outcome or "").lower()
-    if m in RESTRICTED_CASH_MARKETS:
-        return True
     if m == "h2h" and o == "draw":
         return True
-    if m == "totals" and o == "over":
+    # BTTS and totals over are restricted until paper bets prove the model.
+    # Auto-unlock when 20+ paper bets settled with 50%+ win rate and CLV >= 0.
+    if m in RESTRICTED_CASH_MARKETS or (m == "totals" and o == "over"):
+        progress = goal_market_paper_progress()
+        if progress["unlocked"]:
+            return False  # gate passed — allow cash
         return True
     return False
 
