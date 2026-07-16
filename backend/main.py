@@ -121,7 +121,7 @@ def _league_risk_config(league: str, base_min_edge: float) -> dict:
         "min_confidence": None,
         "require_market_agreement": False,
         "daily_loss_cap_pct": None,
-        "real_money": False,
+        "real_money": True,
     }
 
 
