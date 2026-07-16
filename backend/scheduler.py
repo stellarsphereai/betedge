@@ -89,6 +89,7 @@ async def job_auto_paper_bets():
     AUTO_PAPER_MARKETS = {
         ("btts", "yes"), ("btts", "no"),
         ("totals", "over"),
+        ("h2h", "draw"),
     }
     placed = 0
     skipped = 0

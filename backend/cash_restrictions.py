@@ -52,14 +52,18 @@ def is_market_restricted(
         return False
     m = (market or "h2h").lower()
     o = (outcome or "").lower()
-    if m == "h2h" and o == "draw":
-        return True
-    # BTTS and totals over are restricted until paper bets prove the model.
-    # Auto-unlock when 20+ paper bets settled with 50%+ win rate and CLV >= 0.
-    if m in RESTRICTED_CASH_MARKETS or (m == "totals" and o == "over"):
+    # BTTS, totals over, and H2H draw are restricted until paper bets prove
+    # the model. Auto-unlock when 20+ paper bets settled with 50%+ win rate
+    # and CLV >= 0.
+    is_restricted = (
+        m in RESTRICTED_CASH_MARKETS
+        or (m == "totals" and o == "over")
+        or (m == "h2h" and o == "draw")
+    )
+    if is_restricted:
         progress = goal_market_paper_progress()
         if progress["unlocked"]:
-            return False  # gate passed — allow cash
+            return False
         return True
     return False
 
@@ -140,7 +144,7 @@ def goal_market_paper_progress() -> dict:
               AVG(CASE WHEN status IN ('won','lost') AND clv IS NOT NULL THEN clv END) AS avg_clv
             FROM bets_placed
             WHERE is_paper = 1
-              AND market IN ('btts','totals')
+              AND (market IN ('btts','totals') OR (market = 'h2h' AND bet_type = 'draw'))
             """
         ).fetchone()
     settled = int(row["settled"] or 0)
