@@ -809,21 +809,13 @@ def build() -> AsyncIOScheduler:
     s = AsyncIOScheduler(timezone=TIMEZONE)
     schedule = [
         ("sync_epl",         _league_sync_job("epl"),       CronTrigger(hour=0,  minute=0,  timezone=TIMEZONE)),
-        # UCL games are played Tue/Wed (matchdays) — only sync those mornings.
-        # The Final is a fixed date (Sat 2026-05-30 in Budapest); a one-shot
-        # cron at 00:00 NY-local on that date pulls fresh data the morning of.
-        ("sync_ucl",         _league_sync_job("ucl"),       CronTrigger(day_of_week="tue,wed", hour=1, minute=0, timezone=TIMEZONE)),
-        ("sync_ucl_final",   _league_sync_job("ucl"),       CronTrigger(year=2026, month=5, day=30, hour=0, minute=0, timezone=TIMEZONE)),
-        ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
         ("sync_la_liga",     _league_sync_job("la_liga"),   CronTrigger(hour=0,  minute=30, timezone=TIMEZONE)),
+        ("sync_ucl",         _league_sync_job("ucl"),       CronTrigger(hour=1,  minute=0,  timezone=TIMEZONE)),
+        ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=1,  minute=30, timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
-        # Settle ALL past fixtures + pre-fetch their xG stats BEFORE the
-        # WC sync runs, so the model has real data instead of fallbacks.
         ("settle_fixtures",        job_settle_fixtures,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
-        ("sync_world_cup",         _league_sync_job("world_cup"), CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
-        # Mid-day: same pattern — settle first, then sync.
+        # Mid-day settle for matches that finished in the afternoon/evening
         ("settle_fixtures_midday", job_settle_fixtures,          CronTrigger(hour=11, minute=45, timezone=TIMEZONE)),
-        ("sync_world_cup_midday",  _league_sync_job("world_cup"), CronTrigger(hour=12, minute=0,  timezone=TIMEZONE)),
         ("real_trade_audit",      job_real_trade_audit,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),
         # Spec section 2 — 9-task nightly automation pipeline (May 31 → June 10).
         # All tasks log to automation_log; deferred tasks re-arm automatically
@@ -834,13 +826,9 @@ def build() -> AsyncIOScheduler:
         ("nightly_auto_calibration",       job_nightly_auto_calibration,       CronTrigger(hour=0,  minute=30, timezone=TIMEZONE)),
         ("nightly_clv_feedback",           job_clv_feedback_eval,              CronTrigger(hour=23, minute=50, timezone=TIMEZONE)),
         ("weekly_tactical_suppressor",     job_weekly_tactical_suppressor_detect, CronTrigger(day_of_week="sun", hour=4, minute=15, timezone=TIMEZONE)),
-        ("nightly_wc_data_prep",           job_nightly_wc_data_prep,           CronTrigger(hour=1,  minute=0,  timezone=TIMEZONE)),
         ("nightly_system_health",          job_nightly_system_health,          CronTrigger(hour=1,  minute=30, timezone=TIMEZONE)),
         ("nightly_feature_verification",   job_nightly_feature_verification,   CronTrigger(hour=2,  minute=0,  timezone=TIMEZONE)),
-        ("nightly_wc_configuration",       job_nightly_wc_configuration,       CronTrigger(hour=2,  minute=15, timezone=TIMEZONE)),
         ("nightly_real_money_performance", job_nightly_real_money_performance, CronTrigger(hour=3,  minute=0,  timezone=TIMEZONE)),
-        ("nightly_readiness_score",        job_nightly_readiness_score,        CronTrigger(hour=4,  minute=0,  timezone=TIMEZONE)),
-        ("nightly_early_wc_opportunities", job_nightly_early_wc_opportunities, CronTrigger(hour=5,  minute=0,  timezone=TIMEZONE)),
         ("consec_failure_alert",           job_consec_failure_alert,           CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_report",                 job_morning_report,                 CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
@@ -855,13 +843,9 @@ def build() -> AsyncIOScheduler:
         ("weekly_accuracy",       job_weekly_accuracy_snapshot,  CronTrigger(day_of_week="sun", hour=4, minute=0, timezone=TIMEZONE)),
         # Monthly 1st 04:00 NY
         ("monthly_calibration",   job_monthly_calibration_check, CronTrigger(day=1,            hour=4, minute=0, timezone=TIMEZONE)),
-        # Nightly 04:30 NY — silent unless WC phase transitioned
-        ("wc_nightly_check",      job_nightly_wc_check,          CronTrigger(hour=4, minute=30, timezone=TIMEZONE)),
         # Fix B (opponent-adjusted xG) auto-activation — one-shot at
         # 2026-07-20 00:01 NY-local (post-World-Cup-Final). Flips the
         # OPPONENT_ADJUSTED_XG flag in .env and emails the operator.
-        # After this fires it never re-triggers (year/month/day all match
-        # exactly once).
         ("activate_fix_b",        job_activate_opponent_adjusted_xg, CronTrigger(year=2026, month=7, day=20, hour=0, minute=1, timezone=TIMEZONE)),
     ]
     for jid, fn, trig in schedule:
