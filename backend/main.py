@@ -949,7 +949,7 @@ def _model_prob_for_bet(bet: dict) -> float | None:
 
 
 @app.get("/bets")
-async def list_bets(status: str | None = None, limit: int = Query(100, ge=1, le=1000)):
+async def list_bets(status: str | None = None, league: str | None = None, limit: int = Query(100, ge=1, le=1000)):
     """Bets joined with fixture result + model prediction so the UI can show
     placement-implied / closing-implied / model probabilities side-by-side."""
     q = """
@@ -965,12 +965,18 @@ async def list_bets(status: str | None = None, limit: int = Query(100, ge=1, le=
         LEFT JOIN fixtures f         ON f.match_id = b.match_id
         LEFT JOIN model_predictions p ON p.match_id = b.match_id
     """
-    params: tuple = ()
+    clauses: list[str] = []
+    params: list = []
     if status:
-        q += " WHERE b.status = ?"
-        params = (status,)
+        clauses.append("b.status = ?")
+        params.append(status)
+    if league:
+        clauses.append("p.league = ?")
+        params.append(league)
+    if clauses:
+        q += " WHERE " + " AND ".join(clauses)
     q += " ORDER BY b.timestamp DESC LIMIT ?"
-    params = (*params, limit)
+    params.append(limit)
     with db() as conn:
         rows = conn.execute(q, params).fetchall()
 

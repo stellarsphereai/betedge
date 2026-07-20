@@ -804,8 +804,9 @@ export default function PortfolioView() {
     setLoading(true); setError(null)
     try {
       // Summary endpoint takes is_paper bool; for 'all' we sum both later.
+      const leagueParam = filters.league || undefined
       const summaryReq = mode === 'all'
-        ? Promise.all([api.portfolioSummary({ isPaper: true }), api.portfolioSummary({ isPaper: false })])
+        ? Promise.all([api.portfolioSummary({ isPaper: true, league: leagueParam }), api.portfolioSummary({ isPaper: false, league: leagueParam })])
             .then(([sp, sc]) => ({
               starting_bankroll: (sp.starting_bankroll || 0) + (sc.starting_bankroll || 0),
               realized_pnl:      (sp.realized_pnl || 0)     + (sc.realized_pnl || 0),
@@ -816,7 +817,7 @@ export default function PortfolioView() {
               current_value_best:  (sp.current_value_best  || 0) + (sc.current_value_best  || 0),
               current_value_worst: (sp.current_value_worst || 0) + (sc.current_value_worst || 0),
             }))
-        : api.portfolioSummary({ isPaper: paperOnly })
+        : api.portfolioSummary({ isPaper: paperOnly, league: leagueParam })
       const [s, b, p, bb] = await Promise.all([
         summaryReq,
         api.bets(1000),
@@ -829,8 +830,6 @@ export default function PortfolioView() {
         ? allBets
         : allBets.filter(x => paperOnly ? x.is_paper === 1 : x.is_paper !== 1)
       setBets(filtered)
-      // Charts always show both paper + cash, side-by-side, regardless of the
-      // top toggle (the toggle only affects the summary cards + bet table).
       setPaperBets(allBets.filter(x => x.is_paper === 1))
       setCashBets(allBets.filter(x => x.is_paper !== 1))
       setProjection(p)
@@ -839,7 +838,7 @@ export default function PortfolioView() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [mode])
+  useEffect(() => { load() }, [mode, filters.league])
 
   const startingBankroll = summary?.starting_bankroll ?? 1000
   const defaultEdge = summary?.avg_edge || 0.06
@@ -976,6 +975,7 @@ export default function PortfolioView() {
             >
               <option value="">All leagues</option>
               <option value="epl">EPL</option>
+              <option value="la_liga">La Liga</option>
               <option value="ucl">UCL</option>
               <option value="uel">EL</option>
               <option value="world_cup">World Cup</option>
@@ -1057,19 +1057,17 @@ export default function PortfolioView() {
         </div>
       </div>
 
-      {/* Charts always show both paper + cash side-by-side regardless of the
-          top toggle — comparing the two views is the whole point. */}
       <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PortfolioCharts
-          title="Paper trade"
+          title={`Paper trade${filters.league ? ` (${filters.league.toUpperCase().replace('_', ' ')})` : ''}`}
           tone="paper"
-          bets={paperBets}
+          bets={filters.league ? paperBets.filter(b => (b.league || b.match_league) === filters.league) : paperBets}
           startingBankroll={startingBankroll}
         />
         <PortfolioCharts
-          title="Cash trade"
+          title={`Cash trade${filters.league ? ` (${filters.league.toUpperCase().replace('_', ' ')})` : ''}`}
           tone="cash"
-          bets={cashBets}
+          bets={filters.league ? cashBets.filter(b => (b.league || b.match_league) === filters.league) : cashBets}
           startingBankroll={startingBankroll}
         />
       </div>
