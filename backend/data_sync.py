@@ -67,7 +67,18 @@ def _outcome_from_score(home_goals: int | None, away_goals: int | None) -> str |
 
 
 def _store_fixture(conn: sqlite3.Connection, fx: dict, league: str) -> None:
-    g = fx.get("goals") or {}
+    # Use 90-min fulltime score for results. fx["goals"] includes extra time
+    # which would wrongly settle AET/PEN matches as home/away instead of draw.
+    status_short = (fx.get("fixture", {}).get("status", {}).get("short") or "").upper()
+    ft = (fx.get("score") or {}).get("fulltime") or {}
+    g_home = ft.get("home")
+    g_away = ft.get("away")
+    # Fallback to goals only for FT (not AET/PEN) or when match hasn't finished
+    if g_home is None or g_away is None:
+        if status_short not in ("AET", "PEN", "FT_PEN"):
+            g = fx.get("goals") or {}
+            g_home = g.get("home")
+            g_away = g.get("away")
     conn.execute(
         """
         INSERT INTO fixtures (match_id, home_team, away_team, league, kickoff_time, result, home_goals, away_goals)
@@ -86,9 +97,9 @@ def _store_fixture(conn: sqlite3.Connection, fx: dict, league: str) -> None:
             team_aliases.canonical(fx["teams"]["away"]["name"]),
             league,
             fx["fixture"]["date"],
-            _outcome_from_score(g.get("home"), g.get("away")),
-            g.get("home"),
-            g.get("away"),
+            _outcome_from_score(g_home, g_away),
+            g_home,
+            g_away,
         ),
     )
 
