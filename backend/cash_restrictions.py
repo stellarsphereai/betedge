@@ -61,7 +61,9 @@ def is_market_restricted(
         or (m == "h2h" and o == "draw")
     )
     if is_restricted:
-        progress = goal_market_paper_progress()
+        # Per-league unlock: each league must independently prove the model
+        # on paper before restricted markets become cash-eligible.
+        progress = goal_market_paper_progress(league=league)
         if progress["unlocked"]:
             return False
         return True
@@ -126,27 +128,33 @@ def has_paper_counterpart(
     return row is not None
 
 
-def goal_market_paper_progress() -> dict:
+def goal_market_paper_progress(league: Optional[str] = None) -> dict:
     """Roll-up driving the unlock-criteria progress bar.
     Computes win rate + avg CLV on paper bets in goal markets only.
+    When league is provided, only counts paper bets for that league
+    so each league unlocks independently.
     Goal markets unlock when both:
       - settled count >= UNLOCK_MIN_PAPER_GOAL_BETS (20)
       - win rate >= UNLOCK_MIN_PAPER_GOAL_WINRATE (50%)
       - avg CLV >= 0
     """
     with db() as conn:
-        row = conn.execute(
-            """
+        q = """
             SELECT
-              COALESCE(SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END), 0) AS settled,
-              COALESCE(SUM(CASE WHEN status='won'  THEN 1 ELSE 0 END), 0)             AS won,
-              COALESCE(SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END), 0)             AS lost,
-              AVG(CASE WHEN status IN ('won','lost') AND clv IS NOT NULL THEN clv END) AS avg_clv
-            FROM bets_placed
-            WHERE is_paper = 1
-              AND (market IN ('btts','totals') OR (market = 'h2h' AND bet_type = 'draw'))
-            """
-        ).fetchone()
+              COALESCE(SUM(CASE WHEN b.status IN ('won','lost') THEN 1 ELSE 0 END), 0) AS settled,
+              COALESCE(SUM(CASE WHEN b.status='won'  THEN 1 ELSE 0 END), 0)             AS won,
+              COALESCE(SUM(CASE WHEN b.status='lost' THEN 1 ELSE 0 END), 0)             AS lost,
+              AVG(CASE WHEN b.status IN ('won','lost') AND b.clv IS NOT NULL THEN b.clv END) AS avg_clv
+            FROM bets_placed b
+            LEFT JOIN model_predictions p ON p.match_id = b.match_id
+            WHERE b.is_paper = 1
+              AND (b.market IN ('btts','totals') OR (b.market = 'h2h' AND b.bet_type = 'draw'))
+        """
+        params: list = []
+        if league:
+            q += " AND p.league = ?"
+            params.append(league)
+        row = conn.execute(q, params).fetchone()
     settled = int(row["settled"] or 0)
     won = int(row["won"] or 0)
     lost = int(row["lost"] or 0)
@@ -289,4 +297,8 @@ def restriction_status() -> dict:
         "restricted_markets": sorted(RESTRICTED_CASH_MARKETS),
         "restricted_h2h_outcomes": sorted(RESTRICTED_CASH_OUTCOMES),
         "goal_market_progress": goal_market_paper_progress(),
+        "goal_market_progress_by_league": {
+            lg: goal_market_paper_progress(league=lg)
+            for lg in ("epl", "la_liga", "ucl", "uel")
+        },
     }
