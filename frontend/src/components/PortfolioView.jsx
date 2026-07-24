@@ -904,12 +904,26 @@ export default function PortfolioView() {
       <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
         <div>
           <h2 className="text-lg font-semibold">Portfolio</h2>
-          <div className="text-xs text-slate-500">All bets, P&L, edges, and projections.</div>
+          <div className="text-xs text-slate-500">Performance tracking, P&L, and projections.</div>
         </div>
-        <button
-          onClick={() => exportCSV(bets)}
-          className="px-3 py-1 rounded-md text-xs font-medium border border-ink-700 hover:border-slate-500 text-slate-200"
-        >Export CSV</button>
+        <div className="flex items-center gap-2">
+          <select
+            value={filters.league}
+            onChange={e => setFilters(f => ({ ...f, league: e.target.value }))}
+            className="bg-ink-800 border border-ink-700 rounded px-2 py-1 text-xs text-slate-200"
+          >
+            <option value="">All leagues</option>
+            <option value="epl">EPL</option>
+            <option value="la_liga">La Liga</option>
+            <option value="ucl">UCL</option>
+            <option value="uel">EL</option>
+            <option value="world_cup">World Cup</option>
+          </select>
+          <button
+            onClick={() => exportCSV(bets)}
+            className="px-3 py-1 rounded-md text-xs font-medium border border-ink-700 hover:border-slate-500 text-slate-200"
+          >Export CSV</button>
+        </div>
       </div>
 
       {/* Mode toggle — three tabs: All / Paper / Cash (spec 1.5) */}
@@ -955,6 +969,9 @@ export default function PortfolioView() {
 
       {error && <div className="mb-3 text-xs text-bad">{error}</div>}
       {loading && <div className="mb-3 text-xs text-slate-500">Loading portfolio…</div>}
+
+      {/* Performance benchmark — top of page for at-a-glance tracking */}
+      <PerformanceBenchmark league={filters.league || undefined} />
 
       <SummaryCards summary={filteredSummary} filtered={hasFilters} />
 
@@ -1072,8 +1089,6 @@ export default function PortfolioView() {
           startingBankroll={startingBankroll}
         />
       </div>
-
-      <PerformanceBenchmark league={filters.league || undefined} />
 
       <div className="mt-4">
         <KellyProjectionPanel projection={projection} startingBankroll={startingBankroll} />
