@@ -87,8 +87,8 @@ export default function PerformanceBenchmark({ league }) {
         )}
       </div>
 
-      {/* Win tally for current month */}
-      {current && (
+      {/* Win tally — only show when there are bets this month with open or recent activity */}
+      {current && current.bets >= 5 && (current.open > 0 || current.won + current.lost >= 5) && (
         <div className="bg-ink-800 border border-ink-700 rounded p-3 mb-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-slate-300 font-medium">
