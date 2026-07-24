@@ -66,6 +66,7 @@ MIN_BOOK_COVERAGE = {
     "totals": 4,
 }
 MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "0.02"))
+MIN_ODDS = float(os.getenv("MIN_ODDS", "1.70"))
 
 # WC-specific guardrails (real-money betting on a sparse, structurally weaker
 # corpus). Tighter floor on edge, smaller stake cap, only HIGH-confidence
@@ -652,6 +653,9 @@ async def get_ev_bets(
                     offer_lookup[("totals", line)] = by_book
 
         for b in ev_bets:
+            # Minimum odds filter — skip bets where wins don't cover losses
+            if b.decimal_odds < MIN_ODDS:
+                continue
             offers = offer_lookup.get((b.market, b.market_line)) or {}
             outcome_offers = {bk: o[b.outcome] for bk, o in offers.items() if b.outcome in o}
             shop = line_shopper.best_line(outcome_offers, opening_odds=None, edge=b.edge)
