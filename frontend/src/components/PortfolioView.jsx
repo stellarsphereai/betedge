@@ -1077,20 +1077,6 @@ export default function PortfolioView() {
 
       </div>
 
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PortfolioCharts
-          title={`Paper trade${filters.league ? ` (${filters.league.toUpperCase().replace('_', ' ')})` : ''}`}
-          tone="paper"
-          bets={filters.league ? paperBets.filter(b => (b.league || b.match_league) === filters.league) : paperBets}
-          startingBankroll={startingBankroll}
-        />
-        <PortfolioCharts
-          title={`Cash trade${filters.league ? ` (${filters.league.toUpperCase().replace('_', ' ')})` : ''}`}
-          tone="cash"
-          bets={filters.league ? cashBets.filter(b => (b.league || b.match_league) === filters.league) : cashBets}
-          startingBankroll={startingBankroll}
-        />
-      </div>
     </div>
   )
 }
