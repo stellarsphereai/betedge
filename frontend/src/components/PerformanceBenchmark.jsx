@@ -87,50 +87,6 @@ export default function PerformanceBenchmark({ league }) {
         )}
       </div>
 
-      {/* Win tally — only show when there are bets this month with open or recent activity */}
-      {current && current.bets >= 5 && (current.open > 0 || current.won + current.lost >= 5) && (
-        <div className="bg-ink-800 border border-ink-700 rounded p-3 mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-slate-300 font-medium">
-              {current.month} Win Tally
-            </span>
-            <span className="text-xs text-slate-400">
-              Target: {fmtMoney(current.target_pnl)} profit
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <div className="flex justify-between text-xs text-slate-400 mb-1">
-                <span>{current.won}W – {current.lost}L ({current.bets} bets)</span>
-                <span>
-                  {current.win_rate != null ? `${(current.win_rate * 100).toFixed(0)}% win rate` : '—'}
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div className="w-full bg-ink-700 rounded-full h-3 overflow-hidden">
-                <div
-                  className="h-3 rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(100, Math.max(0, (current.pnl / current.target_pnl) * 100))}%`,
-                    backgroundColor: BENCHMARK_COLORS[current.benchmark],
-                  }}
-                />
-              </div>
-              <div className="flex justify-between text-[11px] mt-1">
-                <span className={current.pnl >= 0 ? 'text-good' : 'text-red-400'}>
-                  {fmtMoney(current.pnl)}
-                </span>
-                <span className="text-slate-500">
-                  {current.wins_to_target > 0
-                    ? `${current.wins_to_target} more win${current.wins_to_target > 1 ? 's' : ''} needed`
-                    : 'Target reached!'
-                  }
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Monthly chart */}
       <div className="h-48">
