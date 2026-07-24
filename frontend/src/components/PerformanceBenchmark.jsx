@@ -88,29 +88,6 @@ export default function PerformanceBenchmark({ league }) {
       </div>
 
 
-      {/* Monthly chart */}
-      <div className="h-48">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={v => `$${v}`} />
-            <Tooltip
-              contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-              labelStyle={{ color: '#e2e8f0' }}
-              formatter={(v, name) => [name === 'target' ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`, name === 'target' ? '5% Target' : 'Actual P&L']}
-            />
-            <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
-            <Bar dataKey="target" fill="#3b82f640" radius={[2, 2, 0, 0]} name="target" />
-            <Bar dataKey="pnl" radius={[2, 2, 0, 0]} name="pnl">
-              {chartData.map((entry, i) => (
-                <rect key={i} fill={entry.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
       {/* Monthly table */}
       <table className="w-full text-xs mt-3">
         <thead>
