@@ -1070,9 +1070,6 @@ export default function PortfolioView() {
 
         </div>
 
-        <div className="space-y-4">
-          <CalculatorPanel defaultEdge={defaultEdge} defaultBankroll={startingBankroll} />
-        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1088,17 +1085,6 @@ export default function PortfolioView() {
           bets={filters.league ? cashBets.filter(b => (b.league || b.match_league) === filters.league) : cashBets}
           startingBankroll={startingBankroll}
         />
-      </div>
-
-      <div className="mt-4">
-        <KellyProjectionPanel projection={projection} startingBankroll={startingBankroll} />
-
-        <div className="bg-ink-900 border border-ink-700 rounded-xl p-4">
-          <div className="text-sm font-medium mb-3">Return scenarios (default inputs)</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {projection?.scenarios?.map(s => <ScenarioCard key={s.name} s={s} />)}
-          </div>
-        </div>
       </div>
     </div>
   )
