@@ -140,6 +140,7 @@ const BOOK_DISPLAY_ORDER = [
 ]
 
 function PortfolioByBook({ bets, bookBalances, mode }) {
+  const [collapsed, setCollapsed] = useState(true)
   // Aggregate the (filtered) bets by book.
   const byBook = {}
   for (const b of bets) {
@@ -184,11 +185,15 @@ function PortfolioByBook({ bets, bookBalances, mode }) {
 
   return (
     <div className="bg-ink-900 border border-ink-700 rounded-xl overflow-hidden mb-4">
-      <div className="px-3 py-2 border-b border-ink-800 flex items-center gap-2 text-xs">
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full px-3 py-2 border-b border-ink-800 flex items-center gap-2 text-xs hover:bg-ink-800/50 transition"
+      >
         <span className="text-slate-200 font-semibold">P&L by book</span>
         <span className="text-slate-500">— {mode === 'cash' ? 'Cash trade' : 'Paper trade'}</span>
-      </div>
-      <table className="w-full text-xs">
+        <span className="text-slate-500 ml-auto">{collapsed ? '▸ Show' : '▾ Hide'}</span>
+      </button>
+      {!collapsed && <table className="w-full text-xs">
         <thead className="bg-ink-800 text-[10px] uppercase tracking-wider text-slate-400">
           <tr>
             <th className="text-left  px-3 py-1.5">Book</th>
@@ -252,7 +257,7 @@ function PortfolioByBook({ bets, bookBalances, mode }) {
             )}
           </tr>
         </tfoot>
-      </table>
+      </table>}
     </div>
   )
 }
