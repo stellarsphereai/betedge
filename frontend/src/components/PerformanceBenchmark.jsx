@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from 'recharts'
 
 function fmtMoney(n) {
   if (n == null) return '—'
@@ -18,6 +17,62 @@ const BENCHMARK_LABELS = {
   AT_PAR: 'At Par',
   UNDER_PERFORMING: 'Under Performing',
   NEGATIVE: 'Negative',
+}
+
+const LEAGUE_NAMES = {
+  epl: 'EPL', la_liga: 'La Liga', ucl: 'UCL', uel: 'EL', world_cup: 'World Cup',
+}
+
+function MonthRow({ m }) {
+  const [expanded, setExpanded] = useState(false)
+  const leagues = m.by_league ? Object.keys(m.by_league).sort() : []
+  const hasLeagues = leagues.length > 0
+
+  return (
+    <>
+      <tr
+        className={`border-b border-ink-800 hover:bg-ink-800/50 ${hasLeagues ? 'cursor-pointer' : ''}`}
+        onClick={() => hasLeagues && setExpanded(e => !e)}
+      >
+        <td className="py-1.5 text-slate-300">
+          {hasLeagues && <span className="text-slate-500 mr-1">{expanded ? '▾' : '▸'}</span>}
+          {m.month}
+        </td>
+        <td className="text-right text-slate-300">{m.won}–{m.lost}</td>
+        <td className="text-right text-slate-300">{m.win_rate != null ? `${(m.win_rate * 100).toFixed(0)}%` : '—'}</td>
+        <td className={`text-right font-mono ${m.pnl >= 0 ? 'text-good' : 'text-red-400'}`}>{fmtMoney(m.pnl)}</td>
+        <td className="text-right text-good font-mono">{m.avg_win_profit ? `+$${m.avg_win_profit.toFixed(0)}` : '—'}</td>
+        <td className="text-right text-red-400 font-mono">{m.avg_loss ? `-$${Math.abs(m.avg_loss).toFixed(0)}` : '—'}</td>
+        <td className={`text-right ${m.monthly_return_pct >= 0.05 ? 'text-good' : m.monthly_return_pct >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
+          {(m.monthly_return_pct * 100).toFixed(1)}%
+        </td>
+        <td className="text-right text-slate-500">{fmtMoney(m.target_pnl)}</td>
+        <td className="text-right text-slate-400">
+          {m.wins_to_target > 0 ? `${m.wins_to_target} wins × $${m.avg_win_profit?.toFixed(0) || '?'}` : '—'}
+        </td>
+        <td className="pl-3">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                style={{ color: BENCHMARK_COLORS[m.benchmark], backgroundColor: BENCHMARK_COLORS[m.benchmark] + '20' }}>
+            {BENCHMARK_LABELS[m.benchmark]}
+          </span>
+        </td>
+      </tr>
+      {expanded && leagues.map(lg => {
+        const d = m.by_league[lg]
+        return (
+          <tr key={`${m.month}-${lg}`} className="border-b border-ink-800/50 bg-ink-800/30">
+            <td className="py-1 pl-6 text-slate-400 text-[11px]">{LEAGUE_NAMES[lg] || lg}</td>
+            <td className="text-right text-slate-400 text-[11px]">{d.won}–{d.lost}</td>
+            <td className="text-right text-slate-400 text-[11px]">{d.win_rate != null ? `${(d.win_rate * 100).toFixed(0)}%` : '—'}</td>
+            <td className={`text-right font-mono text-[11px] ${d.pnl >= 0 ? 'text-good' : 'text-red-400'}`}>{fmtMoney(d.pnl)}</td>
+            <td className="text-right text-good font-mono text-[11px]">{d.avg_win_profit ? `+$${d.avg_win_profit.toFixed(0)}` : '—'}</td>
+            <td className="text-right text-red-400 font-mono text-[11px]">{d.avg_loss ? `-$${Math.abs(d.avg_loss).toFixed(0)}` : '—'}</td>
+            <td className="text-right text-slate-500 text-[11px]" colSpan={4}></td>
+          </tr>
+        )
+      })}
+    </>
+  )
 }
 
 export default function PerformanceBenchmark({ league }) {
@@ -106,27 +161,7 @@ export default function PerformanceBenchmark({ league }) {
         </thead>
         <tbody>
           {data.monthly.map(m => (
-            <tr key={m.month} className="border-b border-ink-800 hover:bg-ink-800/50">
-              <td className="py-1.5 text-slate-300">{m.month}</td>
-              <td className="text-right text-slate-300">{m.won}–{m.lost}</td>
-              <td className="text-right text-slate-300">{m.win_rate != null ? `${(m.win_rate * 100).toFixed(0)}%` : '—'}</td>
-              <td className={`text-right font-mono ${m.pnl >= 0 ? 'text-good' : 'text-red-400'}`}>{fmtMoney(m.pnl)}</td>
-              <td className="text-right text-good font-mono">{m.avg_win_profit ? `+$${m.avg_win_profit.toFixed(0)}` : '—'}</td>
-              <td className="text-right text-red-400 font-mono">{m.avg_loss ? `-$${Math.abs(m.avg_loss).toFixed(0)}` : '—'}</td>
-              <td className={`text-right ${m.monthly_return_pct >= 0.05 ? 'text-good' : m.monthly_return_pct >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
-                {(m.monthly_return_pct * 100).toFixed(1)}%
-              </td>
-              <td className="text-right text-slate-500">{fmtMoney(m.target_pnl)}</td>
-              <td className="text-right text-slate-400">
-                {m.wins_to_target > 0 ? `${m.wins_to_target} wins × $${m.avg_win_profit?.toFixed(0) || '?'}` : '—'}
-              </td>
-              <td className="pl-3">
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                      style={{ color: BENCHMARK_COLORS[m.benchmark], backgroundColor: BENCHMARK_COLORS[m.benchmark] + '20' }}>
-                  {BENCHMARK_LABELS[m.benchmark]}
-                </span>
-              </td>
-            </tr>
+            <MonthRow key={m.month} m={m} />
           ))}
         </tbody>
       </table>

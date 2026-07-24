@@ -1126,7 +1126,7 @@ async def get_performance(league: str | None = None):
         q = """
             SELECT b.status, b.profit, b.stake, b.odds_at_placement,
                    strftime('%Y-%m', COALESCE(p.kickoff_time, b.timestamp)) AS month,
-                   b.is_paper
+                   b.is_paper, p.league AS bet_league
             FROM bets_placed b
             LEFT JOIN model_predictions p ON p.match_id = b.match_id
             WHERE b.is_paper = 0
@@ -1146,32 +1146,54 @@ async def get_performance(league: str | None = None):
 
     # Group by month
     months: dict = {}
+    def _init_bucket():
+        return {"won": 0, "lost": 0, "open": 0, "pnl": 0.0,
+                "staked": 0.0, "total_bets": 0,
+                "win_profits": [], "loss_amounts": []}
+
+    def _add_to_bucket(bucket, r):
+        bucket["total_bets"] += 1
+        if r["status"] == "won":
+            bucket["won"] += 1
+            bucket["pnl"] += float(r["profit"] or 0)
+            bucket["staked"] += float(r["stake"] or 0)
+            bucket["win_profits"].append(float(r["profit"] or 0))
+        elif r["status"] == "lost":
+            bucket["lost"] += 1
+            bucket["pnl"] += float(r["profit"] or 0)
+            bucket["staked"] += float(r["stake"] or 0)
+            bucket["loss_amounts"].append(float(r["profit"] or 0))
+        else:
+            bucket["open"] += 1
+
     for r in rows:
         m = r["month"] or "unknown"
         if m not in months:
-            months[m] = {"won": 0, "lost": 0, "open": 0, "pnl": 0.0,
-                         "staked": 0.0, "total_bets": 0,
-                         "win_profits": [], "loss_amounts": []}
-        months[m]["total_bets"] += 1
-        if r["status"] == "won":
-            months[m]["won"] += 1
-            months[m]["pnl"] += float(r["profit"] or 0)
-            months[m]["staked"] += float(r["stake"] or 0)
-            months[m]["win_profits"].append(float(r["profit"] or 0))
-        elif r["status"] == "lost":
-            months[m]["lost"] += 1
-            months[m]["pnl"] += float(r["profit"] or 0)
-            months[m]["staked"] += float(r["stake"] or 0)
-            months[m]["loss_amounts"].append(float(r["profit"] or 0))
-        else:
-            months[m]["open"] += 1
+            months[m] = {"totals": _init_bucket(), "by_league": {}}
+        _add_to_bucket(months[m]["totals"], r)
+        lg = r["bet_league"] or "unknown"
+        if lg not in months[m]["by_league"]:
+            months[m]["by_league"][lg] = _init_bucket()
+        _add_to_bucket(months[m]["by_league"][lg], r)
 
     # Build monthly performance with benchmark
+    def _bucket_summary(d):
+        settled = d["won"] + d["lost"]
+        avg_win = (sum(d["win_profits"]) / len(d["win_profits"])) if d["win_profits"] else 0
+        avg_loss = (sum(d["loss_amounts"]) / len(d["loss_amounts"])) if d["loss_amounts"] else 0
+        return {
+            "bets": d["total_bets"], "won": d["won"], "lost": d["lost"], "open": d["open"],
+            "win_rate": round(d["won"] / settled, 4) if settled > 0 else None,
+            "pnl": round(d["pnl"], 2), "staked": round(d["staked"], 2),
+            "avg_win_profit": round(avg_win, 2), "avg_loss": round(avg_loss, 2),
+            "avg_stake": round(d["staked"] / settled, 2) if settled > 0 else 0,
+        }
+
     monthly: list[dict] = []
     cumulative_pnl = 0.0
     running_bankroll = initial_bankroll
     for m in sorted(months.keys()):
-        d = months[m]
+        d = months[m]["totals"]
         settled = d["won"] + d["lost"]
         cumulative_pnl += d["pnl"]
         target_pnl = running_bankroll * target_monthly_pct
@@ -1186,15 +1208,18 @@ async def get_performance(league: str | None = None):
         else:
             benchmark = "NEGATIVE"
 
-        # Actual average profit per winning bet this month
         actual_avg_win = (sum(d["win_profits"]) / len(d["win_profits"])) if d["win_profits"] else 0
         actual_avg_loss = (sum(d["loss_amounts"]) / len(d["loss_amounts"])) if d["loss_amounts"] else 0
         avg_stake = (d["staked"] / settled) if settled > 0 else 50.0
-
-        # How many more wins needed this month to hit target
         remaining_pnl_needed = target_pnl - d["pnl"]
         avg_win_for_calc = actual_avg_win if actual_avg_win > 0 else (avg_stake * 0.75)
         wins_needed = max(0, int(remaining_pnl_needed / avg_win_for_calc) + 1) if remaining_pnl_needed > 0 else 0
+
+        # Per-league breakdown
+        by_league = {
+            lg: _bucket_summary(bucket)
+            for lg, bucket in months[m]["by_league"].items()
+        }
 
         monthly.append({
             "month": m,
@@ -1216,6 +1241,7 @@ async def get_performance(league: str | None = None):
             "avg_stake": round(avg_stake, 2),
             "cumulative_pnl": round(cumulative_pnl, 2),
             "running_bankroll": round(running_bankroll + cumulative_pnl, 2),
+            "by_league": by_league,
         })
         # Compound: next month's target is based on new bankroll
         running_bankroll = running_bankroll * (1 + target_monthly_pct) if d["pnl"] >= target_pnl else running_bankroll
