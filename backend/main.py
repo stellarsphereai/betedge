@@ -1112,6 +1112,119 @@ async def get_stats():
     }
 
 
+@app.get("/performance")
+async def get_performance(league: str | None = None):
+    """Monthly performance benchmark — tracks actual returns vs 5% monthly
+    target. Shows per-month P&L, cumulative return, benchmark status, and
+    win tally needed to hit target."""
+    from datetime import datetime, timezone
+    with db() as conn:
+        q = """
+            SELECT b.status, b.profit, b.stake, b.odds_at_placement,
+                   strftime('%Y-%m', COALESCE(p.kickoff_time, b.timestamp)) AS month,
+                   b.is_paper
+            FROM bets_placed b
+            LEFT JOIN model_predictions p ON p.match_id = b.match_id
+            WHERE b.is_paper = 0
+        """
+        params: list = []
+        if league:
+            q += " AND p.league = ?"
+            params.append(league)
+        q += " ORDER BY COALESCE(p.kickoff_time, b.timestamp)"
+        rows = conn.execute(q, params).fetchall()
+        bal = conn.execute(
+            "SELECT COALESCE(SUM(initial_balance_usd),0) AS init FROM book_balance"
+        ).fetchone()
+
+    initial_bankroll = float(bal["init"] or BANKROLL)
+    target_monthly_pct = 0.05
+
+    # Group by month
+    months: dict = {}
+    for r in rows:
+        m = r["month"] or "unknown"
+        if m not in months:
+            months[m] = {"won": 0, "lost": 0, "open": 0, "pnl": 0.0,
+                         "staked": 0.0, "total_bets": 0}
+        months[m]["total_bets"] += 1
+        if r["status"] == "won":
+            months[m]["won"] += 1
+            months[m]["pnl"] += float(r["profit"] or 0)
+            months[m]["staked"] += float(r["stake"] or 0)
+        elif r["status"] == "lost":
+            months[m]["lost"] += 1
+            months[m]["pnl"] += float(r["profit"] or 0)
+            months[m]["staked"] += float(r["stake"] or 0)
+        else:
+            months[m]["open"] += 1
+
+    # Build monthly performance with benchmark
+    monthly: list[dict] = []
+    cumulative_pnl = 0.0
+    running_bankroll = initial_bankroll
+    for m in sorted(months.keys()):
+        d = months[m]
+        settled = d["won"] + d["lost"]
+        cumulative_pnl += d["pnl"]
+        target_pnl = running_bankroll * target_monthly_pct
+        monthly_return_pct = (d["pnl"] / running_bankroll) if running_bankroll > 0 else 0
+
+        if monthly_return_pct >= target_monthly_pct * 1.0:
+            benchmark = "OVER_PERFORMING"
+        elif abs(monthly_return_pct - target_monthly_pct) < 0.005:
+            benchmark = "AT_PAR"
+        elif monthly_return_pct >= 0:
+            benchmark = "UNDER_PERFORMING"
+        else:
+            benchmark = "NEGATIVE"
+
+        # How many more wins needed this month to hit target
+        # Each win pays avg (odds-1)*avg_stake, each remaining loss costs avg_stake
+        avg_stake = (d["staked"] / settled) if settled > 0 else 50.0
+        avg_odds = 1.75  # blended estimate
+        avg_win_profit = avg_stake * (avg_odds - 1)
+        remaining_pnl_needed = target_pnl - d["pnl"]
+        wins_needed = max(0, int(remaining_pnl_needed / avg_win_profit) + 1) if remaining_pnl_needed > 0 else 0
+
+        monthly.append({
+            "month": m,
+            "bets": d["total_bets"],
+            "won": d["won"],
+            "lost": d["lost"],
+            "open": d["open"],
+            "win_rate": round(d["won"] / settled, 4) if settled > 0 else None,
+            "pnl": round(d["pnl"], 2),
+            "staked": round(d["staked"], 2),
+            "roi": round(d["pnl"] / d["staked"], 4) if d["staked"] > 0 else None,
+            "monthly_return_pct": round(monthly_return_pct, 4),
+            "target_pnl": round(target_pnl, 2),
+            "target_return_pct": target_monthly_pct,
+            "benchmark": benchmark,
+            "wins_to_target": wins_needed,
+            "cumulative_pnl": round(cumulative_pnl, 2),
+            "running_bankroll": round(running_bankroll + cumulative_pnl, 2),
+        })
+        # Compound: next month's target is based on new bankroll
+        running_bankroll = running_bankroll * (1 + target_monthly_pct) if d["pnl"] >= target_pnl else running_bankroll
+
+    # Current month summary
+    now = datetime.now(timezone.utc)
+    current_month = now.strftime("%Y-%m")
+    current = next((m for m in monthly if m["month"] == current_month), None)
+
+    return {
+        "initial_bankroll": initial_bankroll,
+        "target_monthly_pct": target_monthly_pct,
+        "cumulative_pnl": round(cumulative_pnl, 2),
+        "cumulative_return_pct": round(cumulative_pnl / initial_bankroll, 4) if initial_bankroll > 0 else 0,
+        "current_bankroll": round(initial_bankroll + cumulative_pnl, 2),
+        "current_month": current,
+        "monthly": monthly,
+        "league": league,
+    }
+
+
 @app.get("/fixtures")
 async def get_fixtures(league: str | None = None, limit: int = Query(50, ge=1, le=500)):
     q = "SELECT * FROM fixtures"

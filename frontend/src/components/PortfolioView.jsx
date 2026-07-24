@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, Tooltip, ReferenceLine, Legend, CartesianGrid,
 } from 'recharts'
 import { api } from '../api'
+import PerformanceBenchmark from './PerformanceBenchmark'
 
 // ---------- formatters ------------------------------------------------------
 
@@ -1071,6 +1072,8 @@ export default function PortfolioView() {
           startingBankroll={startingBankroll}
         />
       </div>
+
+      <PerformanceBenchmark league={filters.league || undefined} />
 
       <div className="mt-4">
         <KellyProjectionPanel projection={projection} startingBankroll={startingBankroll} />
