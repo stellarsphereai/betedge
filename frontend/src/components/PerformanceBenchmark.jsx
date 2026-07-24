@@ -3,7 +3,7 @@ import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, ReferenceLin
 
 function fmtMoney(n) {
   if (n == null) return '—'
-  return `${n >= 0 ? '+' : ''}$${Math.abs(n).toFixed(2)}`
+  return `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`
 }
 
 const BENCHMARK_COLORS = {
