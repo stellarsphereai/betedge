@@ -986,9 +986,7 @@ export default function PortfolioView() {
         mode={mode === 'all' ? 'all' : mode === 'paper' ? 'paper' : 'cash'}
       />
 
-      {/* Two-column layout: table+charts on left, calculator on right */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 space-y-4">
+      <div className="space-y-4">
           {/* Filters */}
           <div className="flex flex-wrap gap-2 text-xs">
             <select
@@ -1072,8 +1070,6 @@ export default function PortfolioView() {
             dateFrom={filters.dateFrom}
             dateTo={filters.dateTo}
           />
-
-        </div>
 
       </div>
 
