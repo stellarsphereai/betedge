@@ -1146,16 +1146,19 @@ async def get_performance(league: str | None = None):
         m = r["month"] or "unknown"
         if m not in months:
             months[m] = {"won": 0, "lost": 0, "open": 0, "pnl": 0.0,
-                         "staked": 0.0, "total_bets": 0}
+                         "staked": 0.0, "total_bets": 0,
+                         "win_profits": [], "loss_amounts": []}
         months[m]["total_bets"] += 1
         if r["status"] == "won":
             months[m]["won"] += 1
             months[m]["pnl"] += float(r["profit"] or 0)
             months[m]["staked"] += float(r["stake"] or 0)
+            months[m]["win_profits"].append(float(r["profit"] or 0))
         elif r["status"] == "lost":
             months[m]["lost"] += 1
             months[m]["pnl"] += float(r["profit"] or 0)
             months[m]["staked"] += float(r["stake"] or 0)
+            months[m]["loss_amounts"].append(float(r["profit"] or 0))
         else:
             months[m]["open"] += 1
 
@@ -1179,13 +1182,15 @@ async def get_performance(league: str | None = None):
         else:
             benchmark = "NEGATIVE"
 
-        # How many more wins needed this month to hit target
-        # Each win pays avg (odds-1)*avg_stake, each remaining loss costs avg_stake
+        # Actual average profit per winning bet this month
+        actual_avg_win = (sum(d["win_profits"]) / len(d["win_profits"])) if d["win_profits"] else 0
+        actual_avg_loss = (sum(d["loss_amounts"]) / len(d["loss_amounts"])) if d["loss_amounts"] else 0
         avg_stake = (d["staked"] / settled) if settled > 0 else 50.0
-        avg_odds = 1.75  # blended estimate
-        avg_win_profit = avg_stake * (avg_odds - 1)
+
+        # How many more wins needed this month to hit target
         remaining_pnl_needed = target_pnl - d["pnl"]
-        wins_needed = max(0, int(remaining_pnl_needed / avg_win_profit) + 1) if remaining_pnl_needed > 0 else 0
+        avg_win_for_calc = actual_avg_win if actual_avg_win > 0 else (avg_stake * 0.75)
+        wins_needed = max(0, int(remaining_pnl_needed / avg_win_for_calc) + 1) if remaining_pnl_needed > 0 else 0
 
         monthly.append({
             "month": m,
@@ -1202,6 +1207,9 @@ async def get_performance(league: str | None = None):
             "target_return_pct": target_monthly_pct,
             "benchmark": benchmark,
             "wins_to_target": wins_needed,
+            "avg_win_profit": round(actual_avg_win, 2),
+            "avg_loss": round(actual_avg_loss, 2),
+            "avg_stake": round(avg_stake, 2),
             "cumulative_pnl": round(cumulative_pnl, 2),
             "running_bankroll": round(running_bankroll + cumulative_pnl, 2),
         })

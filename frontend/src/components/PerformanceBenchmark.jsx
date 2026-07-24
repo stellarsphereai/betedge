@@ -96,6 +96,8 @@ export default function PerformanceBenchmark({ league }) {
             <th className="text-right">W-L</th>
             <th className="text-right">Win%</th>
             <th className="text-right">P&L</th>
+            <th className="text-right">Avg Win</th>
+            <th className="text-right">Avg Loss</th>
             <th className="text-right">Return</th>
             <th className="text-right">Target</th>
             <th className="text-right">To Target</th>
@@ -109,12 +111,14 @@ export default function PerformanceBenchmark({ league }) {
               <td className="text-right text-slate-300">{m.won}–{m.lost}</td>
               <td className="text-right text-slate-300">{m.win_rate != null ? `${(m.win_rate * 100).toFixed(0)}%` : '—'}</td>
               <td className={`text-right font-mono ${m.pnl >= 0 ? 'text-good' : 'text-red-400'}`}>{fmtMoney(m.pnl)}</td>
+              <td className="text-right text-good font-mono">{m.avg_win_profit ? `+$${m.avg_win_profit.toFixed(0)}` : '—'}</td>
+              <td className="text-right text-red-400 font-mono">{m.avg_loss ? `-$${Math.abs(m.avg_loss).toFixed(0)}` : '—'}</td>
               <td className={`text-right ${m.monthly_return_pct >= 0.05 ? 'text-good' : m.monthly_return_pct >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
                 {(m.monthly_return_pct * 100).toFixed(1)}%
               </td>
               <td className="text-right text-slate-500">{fmtMoney(m.target_pnl)}</td>
               <td className="text-right text-slate-400">
-                {m.wins_to_target > 0 ? `${m.wins_to_target} wins` : '—'}
+                {m.wins_to_target > 0 ? `${m.wins_to_target} wins × $${m.avg_win_profit?.toFixed(0) || '?'}` : '—'}
               </td>
               <td className="pl-3">
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
