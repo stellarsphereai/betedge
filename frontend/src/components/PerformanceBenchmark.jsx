@@ -59,6 +59,13 @@ function MonthRow({ m }) {
       </tr>
       {expanded && leagues.map(lg => {
         const d = m.by_league[lg]
+        const totalBets = m.bets || 1
+        const leagueShare = d.bets / totalBets
+        const leagueTarget = (m.target_pnl || 0) * leagueShare
+        const remaining = leagueTarget - d.pnl
+        const winsNeeded = (remaining > 0 && d.avg_win_profit > 0)
+          ? Math.ceil(remaining / d.avg_win_profit)
+          : 0
         return (
           <tr key={`${m.month}-${lg}`} className="border-b border-ink-800/50 bg-ink-800/30">
             <td className="py-1 pl-6 text-slate-400 text-[11px]">{LEAGUE_NAMES[lg] || lg}</td>
@@ -67,7 +74,12 @@ function MonthRow({ m }) {
             <td className={`text-right font-mono text-[11px] ${d.pnl >= 0 ? 'text-good' : 'text-red-400'}`}>{fmtMoney(d.pnl)}</td>
             <td className="text-right text-good font-mono text-[11px]">{d.avg_win_profit ? `+$${d.avg_win_profit.toFixed(0)}` : '—'}</td>
             <td className="text-right text-red-400 font-mono text-[11px]">{d.avg_loss ? `-$${Math.abs(d.avg_loss).toFixed(0)}` : '—'}</td>
-            <td className="text-right text-slate-500 text-[11px]" colSpan={4}></td>
+            <td className="text-right text-slate-500 text-[11px]"></td>
+            <td className="text-right text-slate-500 text-[11px]">{fmtMoney(leagueTarget)}</td>
+            <td className="text-right text-slate-400 text-[11px]">
+              {winsNeeded > 0 ? `${winsNeeded} wins × $${d.avg_win_profit?.toFixed(0) || '?'}` : '—'}
+            </td>
+            <td className="text-[11px]"></td>
           </tr>
         )
       })}
