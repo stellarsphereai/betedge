@@ -87,6 +87,59 @@ function MonthRow({ m }) {
   )
 }
 
+function ProjectionRow({ m }) {
+  const [expanded, setExpanded] = useState(false)
+  const leagues = m.by_league ? Object.keys(m.by_league).sort() : []
+
+  return (
+    <>
+      <tr
+        className="border-b border-ink-800 hover:bg-ink-800/50 cursor-pointer opacity-70"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <td className="py-1.5 text-slate-400">
+          <span className="text-slate-500 mr-1">{expanded ? '▾' : '▸'}</span>
+          {m.month}
+        </td>
+        <td className="text-right text-slate-500">~{m.bets} bets</td>
+        <td className="text-right text-slate-500">—</td>
+        <td className="text-right text-slate-500">—</td>
+        <td className="text-right text-slate-500 font-mono">~${m.avg_win_profit?.toFixed(0)}</td>
+        <td className="text-right text-slate-500 font-mono">~${Math.abs(m.avg_loss || 0).toFixed(0)}</td>
+        <td className="text-right text-slate-500">5.0%</td>
+        <td className="text-right text-blue-400 font-mono">{fmtMoney(m.target_pnl)}</td>
+        <td className="text-right text-slate-400">
+          {m.wins_to_target} wins × ${m.avg_win_profit?.toFixed(0)}
+        </td>
+        <td className="pl-3">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium text-blue-400 bg-blue-400/10">
+            Projected
+          </span>
+        </td>
+      </tr>
+      {expanded && leagues.map(lg => {
+        const d = m.by_league[lg]
+        return (
+          <tr key={`${m.month}-${lg}`} className="border-b border-ink-800/50 bg-ink-800/20 opacity-70">
+            <td className="py-1 pl-6 text-slate-500 text-[11px]">{LEAGUE_NAMES[lg] || lg}</td>
+            <td className="text-right text-slate-500 text-[11px]">~{d.bets} bets</td>
+            <td className="text-right text-slate-500 text-[11px]">—</td>
+            <td className="text-right text-slate-500 text-[11px]">—</td>
+            <td className="text-right text-slate-500 font-mono text-[11px]">~${d.avg_win_profit?.toFixed(0)}</td>
+            <td className="text-right text-slate-500 font-mono text-[11px]">~${Math.abs(d.avg_loss || 0).toFixed(0)}</td>
+            <td className="text-right text-slate-500 text-[11px]"></td>
+            <td className="text-right text-blue-400/70 text-[11px]">{fmtMoney(d.target)}</td>
+            <td className="text-right text-slate-500 text-[11px]">
+              {d.wins_to_target > 0 ? `${d.wins_to_target} wins × $${d.avg_win_profit?.toFixed(0)}` : '—'}
+            </td>
+            <td className="text-[11px]"></td>
+          </tr>
+        )
+      })}
+    </>
+  )
+}
+
 export default function PerformanceBenchmark({ league }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -102,7 +155,7 @@ export default function PerformanceBenchmark({ league }) {
   }, [league])
 
   if (loading) return <div className="text-slate-500 text-sm p-4">Loading performance data...</div>
-  if (!data || !data.monthly?.length) return <div className="text-slate-500 text-sm p-4">No performance data yet — bets will appear once the season starts.</div>
+  if (!data || (!data.monthly?.length && !data.projection?.length)) return <div className="text-slate-500 text-sm p-4">No performance data yet — bets will appear once the season starts.</div>
 
   const current = data.current_month
   const chartData = data.monthly.map(m => ({
@@ -175,7 +228,34 @@ export default function PerformanceBenchmark({ league }) {
           {data.monthly.map(m => (
             <MonthRow key={m.month} m={m} />
           ))}
+          {data.projection?.length > 0 && (
+            <tr className="border-b border-ink-700">
+              <td colSpan={10} className="py-2 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                Season Projection (5% compounded)
+              </td>
+            </tr>
+          )}
+          {data.projection?.map(m => (
+            <ProjectionRow key={m.month} m={m} />
+          ))}
         </tbody>
+        {data.season_end_bankroll && (
+          <tfoot className="bg-ink-800/60 font-semibold">
+            <tr className="border-t border-ink-700">
+              <td className="px-1 py-1.5 text-slate-200">Season End</td>
+              <td colSpan={2}></td>
+              <td className="text-right font-mono text-good">
+                {fmtMoney(data.season_end_bankroll - data.initial_bankroll)}
+              </td>
+              <td colSpan={2}></td>
+              <td className="text-right text-good">
+                {(data.season_total_return * 100).toFixed(1)}%
+              </td>
+              <td className="text-right text-slate-300">${data.season_end_bankroll?.toFixed(0)}</td>
+              <td colSpan={2}></td>
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   )

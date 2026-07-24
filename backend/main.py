@@ -1251,6 +1251,64 @@ async def get_performance(league: str | None = None):
     current_month = now.strftime("%Y-%m")
     current = next((m for m in monthly if m["month"] == current_month), None)
 
+    # Forward projection — remaining months in the season (Aug 2026 → May 2027)
+    # Shows target per month with per-league allocation based on expected bet volume.
+    SEASON_MONTHS = [
+        "2026-08", "2026-09", "2026-10", "2026-11", "2026-12",
+        "2027-01", "2027-02", "2027-03", "2027-04", "2027-05",
+    ]
+    # Expected bets/week per league by period
+    LEAGUE_VOLUME = {
+        # Aug-Sep: EPL + La Liga only (UCL/UEL start mid-Sep)
+        "early": {"epl": 10, "la_liga": 5},
+        # Oct-May: all four leagues
+        "full": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2},
+    }
+    existing_months = {m["month"] for m in monthly}
+    proj_bankroll = running_bankroll + cumulative_pnl if monthly else initial_bankroll
+    projection: list[dict] = []
+    for pm in SEASON_MONTHS:
+        if pm in existing_months:
+            continue  # already have actuals
+        target_pnl = round(proj_bankroll * target_monthly_pct, 2)
+        vol = LEAGUE_VOLUME["early"] if pm <= "2026-09" else LEAGUE_VOLUME["full"]
+        total_vol = sum(vol.values())
+        avg_win_est = round(proj_bankroll * 0.02 * 1.0, 2)  # 2% stake × (2.0 odds - 1)
+        wins_needed = max(0, int(target_pnl / avg_win_est) + 1) if avg_win_est > 0 else 0
+        league_targets = {}
+        for lg, bets_per_week in vol.items():
+            share = bets_per_week / total_vol
+            lg_target = round(target_pnl * share, 2)
+            lg_bets_month = int(bets_per_week * 4.3)
+            lg_wins = max(0, int(lg_target / avg_win_est) + 1) if avg_win_est > 0 else 0
+            league_targets[lg] = {
+                "bets": lg_bets_month, "won": 0, "lost": 0, "open": 0,
+                "win_rate": None, "pnl": 0, "staked": 0,
+                "avg_win_profit": avg_win_est, "avg_loss": round(-avg_win_est, 2),
+                "target": lg_target, "wins_to_target": lg_wins,
+            }
+        projection.append({
+            "month": pm,
+            "bets": int(total_vol * 4.3),
+            "won": 0, "lost": 0, "open": 0,
+            "win_rate": None,
+            "pnl": 0, "staked": 0,
+            "roi": None,
+            "monthly_return_pct": 0,
+            "target_pnl": target_pnl,
+            "target_return_pct": target_monthly_pct,
+            "benchmark": "PROJECTED",
+            "wins_to_target": wins_needed,
+            "avg_win_profit": avg_win_est,
+            "avg_loss": round(-avg_win_est, 2),
+            "avg_stake": round(proj_bankroll * 0.02, 2),
+            "cumulative_pnl": 0,
+            "running_bankroll": round(proj_bankroll, 2),
+            "by_league": league_targets,
+            "is_projection": True,
+        })
+        proj_bankroll *= (1 + target_monthly_pct)
+
     return {
         "initial_bankroll": initial_bankroll,
         "target_monthly_pct": target_monthly_pct,
@@ -1259,6 +1317,9 @@ async def get_performance(league: str | None = None):
         "current_bankroll": round(initial_bankroll + cumulative_pnl, 2),
         "current_month": current,
         "monthly": monthly,
+        "projection": projection,
+        "season_end_bankroll": round(proj_bankroll, 2),
+        "season_total_return": round((proj_bankroll - initial_bankroll) / initial_bankroll, 4),
         "league": league,
     }
 
