@@ -379,7 +379,26 @@ async def get_predictions(
             "ORDER BY kickoff_time ASC, created_at DESC LIMIT ?",
             (*params, limit),
         ).fetchall()
-    return {"count": len(rows), "predictions": [dict(r) for r in rows]}
+    out = []
+    for r in rows:
+        d = dict(r)
+        # Extract top predicted scorelines from the score matrix
+        if d.get("score_matrix_json"):
+            try:
+                matrix = json.loads(d["score_matrix_json"])
+                scorelines = []
+                for h in range(len(matrix)):
+                    for a in range(len(matrix[0])):
+                        scorelines.append({"home": h, "away": a, "prob": round(matrix[h][a], 4)})
+                scorelines.sort(key=lambda s: s["prob"], reverse=True)
+                d["top_scorelines"] = scorelines[:5]
+                d["most_likely_score"] = f"{scorelines[0]['home']}-{scorelines[0]['away']}"
+                d["most_likely_score_prob"] = scorelines[0]["prob"]
+            except Exception:
+                d["top_scorelines"] = []
+                d["most_likely_score"] = None
+        out.append(d)
+    return {"count": len(out), "predictions": out}
 
 
 # In-process TTL cache for /ev-bets responses, keyed by (league, bankroll,

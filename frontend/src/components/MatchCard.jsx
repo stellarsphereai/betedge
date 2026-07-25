@@ -474,10 +474,21 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
       <ProbabilityView title="What the model thinks" view={modelView} prediction={prediction} valueClass="text-good" />
 
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-ink-700/60 text-xs text-slate-400">
-        <div>
-          xG: <span className="text-slate-200 tabular-nums">{prediction.home_xg?.toFixed(2)}</span>
-          <span className="text-slate-500"> / </span>
-          <span className="text-slate-200 tabular-nums">{prediction.away_xg?.toFixed(2)}</span>
+        <div className="flex gap-4">
+          <div>
+            xG: <span className="text-slate-200 tabular-nums">{prediction.home_xg?.toFixed(2)}</span>
+            <span className="text-slate-500"> / </span>
+            <span className="text-slate-200 tabular-nums">{prediction.away_xg?.toFixed(2)}</span>
+          </div>
+          {prediction.most_likely_score && (
+            <div>
+              Predicted: <span className="text-amber-300 font-semibold tabular-nums">{prediction.most_likely_score}</span>
+              <span className="text-slate-500 ml-1">({(prediction.most_likely_score_prob * 100).toFixed(0)}%)</span>
+              {prediction.top_scorelines?.slice(1, 4).map((s, i) => (
+                <span key={i} className="text-slate-500 ml-1.5 tabular-nums">{s.home}-{s.away} <span className="text-slate-600">{(s.prob * 100).toFixed(0)}%</span></span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           {!inPlay && (
