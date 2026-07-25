@@ -101,6 +101,7 @@ LEAGUE_TO_SPORT_KEY = {
     "uel": "soccer_uefa_europa_league",
     "world_cup": "soccer_fifa_world_cup",
     "la_liga": "soccer_spain_la_liga",
+    "mls": "soccer_usa_mls",
 }
 
 
@@ -1278,10 +1279,12 @@ async def get_performance(league: str | None = None):
     ]
     # Expected bets/week per league by period
     LEAGUE_VOLUME = {
-        # Aug-Sep: EPL + La Liga only (UCL/UEL start mid-Sep)
-        "early": {"epl": 10, "la_liga": 5},
-        # Oct-May: all four leagues
-        "full": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2},
+        # Aug-Sep: EPL + La Liga + MLS (UCL/UEL start mid-Sep)
+        "early": {"epl": 10, "la_liga": 5, "mls": 6},
+        # Oct: all leagues including MLS (MLS ends mid-Oct)
+        "full": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2, "mls": 6},
+        # Nov-May: European leagues only (MLS off-season)
+        "winter": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2},
     }
     existing_months = {m["month"] for m in monthly}
     proj_bankroll = running_bankroll + cumulative_pnl if monthly else initial_bankroll
@@ -1290,7 +1293,12 @@ async def get_performance(league: str | None = None):
         if pm in existing_months:
             continue  # already have actuals
         target_pnl = round(proj_bankroll * target_monthly_pct, 2)
-        vol = LEAGUE_VOLUME["early"] if pm <= "2026-09" else LEAGUE_VOLUME["full"]
+        if pm <= "2026-09":
+            vol = LEAGUE_VOLUME["early"]      # Aug-Sep: EPL + La Liga + MLS
+        elif pm == "2026-10":
+            vol = LEAGUE_VOLUME["full"]        # Oct: all leagues including MLS
+        else:
+            vol = LEAGUE_VOLUME["winter"]      # Nov-May: European only (MLS off-season)
         total_vol = sum(vol.values())
         avg_win_est = round(proj_bankroll * 0.02 * 1.0, 2)  # 2% stake × (2.0 odds - 1)
         wins_needed = max(0, int(target_pnl / avg_win_est) + 1) if avg_win_est > 0 else 0

@@ -923,6 +923,7 @@ export default function PortfolioView() {
             <option value="ucl">UCL</option>
             <option value="uel">EL</option>
             <option value="world_cup">World Cup</option>
+            <option value="mls">MLS</option>
           </select>
           <button
             onClick={() => exportCSV(bets)}
@@ -1000,6 +1001,7 @@ export default function PortfolioView() {
               <option value="ucl">UCL</option>
               <option value="uel">EL</option>
               <option value="world_cup">World Cup</option>
+            <option value="mls">MLS</option>
             </select>
             <select
               value={filters.market}

@@ -299,6 +299,6 @@ def restriction_status() -> dict:
         "goal_market_progress": goal_market_paper_progress(),
         "goal_market_progress_by_league": {
             lg: goal_market_paper_progress(league=lg)
-            for lg in ("epl", "la_liga", "ucl", "uel")
+            for lg in ("epl", "la_liga", "ucl", "uel", "mls")
         },
     }
