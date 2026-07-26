@@ -482,11 +482,33 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
           </div>
           {prediction.most_likely_score && (
             <div>
-              Predicted: <span className="text-amber-300 font-semibold tabular-nums">{prediction.most_likely_score}</span>
+              Model: <span className="text-amber-300 font-semibold tabular-nums">{prediction.most_likely_score}</span>
               <span className="text-slate-500 ml-1">({(prediction.most_likely_score_prob * 100).toFixed(0)}%)</span>
-              {prediction.top_scorelines?.slice(1, 4).map((s, i) => (
+              {prediction.top_scorelines?.slice(1, 3).map((s, i) => (
                 <span key={i} className="text-slate-500 ml-1.5 tabular-nums">{s.home}-{s.away} <span className="text-slate-600">{(s.prob * 100).toFixed(0)}%</span></span>
               ))}
+            </div>
+          )}
+          {consensus?.totals?.['2.5'] && consensus?.h2h && (
+            <div>
+              Market: <span className="text-blue-300 font-semibold tabular-nums">
+                {(() => {
+                  const totalXg = -Math.log(consensus.totals['2.5'].under || 0.6) + 2.5
+                  const homeShare = (consensus.h2h.home || 0.33) / ((consensus.h2h.home || 0.33) + (consensus.h2h.away || 0.33))
+                  const hxg = totalXg * homeShare
+                  const axg = totalXg * (1 - homeShare)
+                  const h = Math.round(hxg)
+                  const a = Math.round(axg)
+                  return `${h}-${a}`
+                })()}
+              </span>
+              <span className="text-slate-500 ml-1">
+                (xG {(() => {
+                  const totalXg = -Math.log(consensus.totals['2.5'].under || 0.6) + 2.5
+                  const homeShare = (consensus.h2h.home || 0.33) / ((consensus.h2h.home || 0.33) + (consensus.h2h.away || 0.33))
+                  return `${(totalXg * homeShare).toFixed(1)}/${(totalXg * (1 - homeShare)).toFixed(1)}`
+                })()})
+              </span>
             </div>
           )}
         </div>
