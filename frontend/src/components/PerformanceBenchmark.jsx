@@ -63,7 +63,11 @@ function MonthRow({ m }) {
         const leagueShare = d.bets / totalBets
         const leagueTarget = (m.target_pnl || 0) * leagueShare
         const remaining = leagueTarget - d.pnl
-        const winsNeeded = (remaining > 0 && d.avg_win_profit > 0)
+        // Don't show target/to-target if no open bets and month is past or current
+        const hasOpenBets = d.open > 0
+        const isCurrentOrPast = m.month <= new Date().toISOString().slice(0, 7)
+        const leagueDone = isCurrentOrPast && !hasOpenBets && (d.won + d.lost) > 0
+        const winsNeeded = (!leagueDone && remaining > 0 && d.avg_win_profit > 0)
           ? Math.ceil(remaining / d.avg_win_profit)
           : 0
         return (
@@ -75,9 +79,9 @@ function MonthRow({ m }) {
             <td className="text-right text-good font-mono text-[11px]">{d.avg_win_profit ? `+$${d.avg_win_profit.toFixed(0)}` : '—'}</td>
             <td className="text-right text-red-400 font-mono text-[11px]">{d.avg_loss ? `-$${Math.abs(d.avg_loss).toFixed(0)}` : '—'}</td>
             <td className="text-right text-slate-500 text-[11px]"></td>
-            <td className="text-right text-slate-500 text-[11px]">{fmtMoney(leagueTarget)}</td>
+            <td className="text-right text-slate-500 text-[11px]">{leagueDone ? '—' : fmtMoney(leagueTarget)}</td>
             <td className="text-right text-slate-400 text-[11px]">
-              {winsNeeded > 0 ? `${winsNeeded} wins × $${d.avg_win_profit?.toFixed(0) || '?'}` : '—'}
+              {leagueDone ? 'Complete' : winsNeeded > 0 ? `${winsNeeded} wins × $${d.avg_win_profit?.toFixed(0) || '?'}` : '—'}
             </td>
             <td className="text-[11px]"></td>
           </tr>
