@@ -837,7 +837,7 @@ def build() -> AsyncIOScheduler:
         ("consec_failure_alert",           job_consec_failure_alert,           CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
         ("morning_report",                 job_morning_report,                 CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("morning_ev",            job_morning_ev,                CronTrigger(hour=6,  minute=0,  timezone=TIMEZONE)),
-        ("auto_paper_bets",       job_auto_paper_bets,           CronTrigger(hour=6,  minute=15, timezone=TIMEZONE)),
+        ("auto_paper_bets",       job_auto_paper_bets,           IntervalTrigger(hours=4)),
         ("morning_digest",        job_morning_digest,            CronTrigger(hour=8,  minute=0,  timezone=TIMEZONE)),
         ("pre_kickoff_clv",       job_pre_kickoff_clv,           IntervalTrigger(minutes=30)),
         ("closing_and_pnl",       job_closing_lines_and_pnl,     CronTrigger(hour=23, minute=55, timezone=TIMEZONE)),
