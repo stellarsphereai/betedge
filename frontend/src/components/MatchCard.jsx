@@ -270,10 +270,10 @@ export default function MatchCard({ prediction, bets, consensus, modelView, leag
           </label>
           <div>
             <div className={`font-semibold text-base tracking-tight ${betsPlaced ? 'line-through text-slate-400' : ''}`}>
-              {prediction.home_team}
+              <span className="text-good">{prediction.home_team}</span>
               <TrendBadge attack={prediction.home_attack_trend} defense={prediction.home_defense_trend} />
               <span className="text-slate-500"> vs </span>
-              {prediction.away_team}
+              <span className="text-white">{prediction.away_team}</span>
               <TrendBadge attack={prediction.away_attack_trend} defense={prediction.away_defense_trend} />
             </div>
             <div className="text-xs text-slate-400 mt-0.5">
