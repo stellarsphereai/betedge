@@ -359,9 +359,7 @@ function BetTable({ bets, league, market, status, dateFrom, dateTo }) {
           <tbody>
             {sorted.map(b => {
               const ev = (b.stake || 0) * (b.edge_at_placement || 0)
-              const pnlCell = b.status === 'open'
-                ? <span className="text-accent">{fmtMoney(ev, { signed: true })}</span>
-                : b.status === 'won'
+              const pnlCell = b.status === 'won'
                   ? <span className="text-good">{fmtMoney(b.profit, { signed: true })}</span>
                   : b.status === 'lost'
                     ? <span className="text-bad">{fmtMoney(b.profit, { signed: true })}</span>
