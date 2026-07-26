@@ -209,13 +209,21 @@ async def team_statistics(
     return data.get("response", {}) or {}
 
 
+MIN_SEASON_MATCHES_FOR_AVG = 5  # need at least 5 matches for season avg to be meaningful
+
+
 def season_avg_goals(stats: dict) -> tuple[float | None, float | None]:
     """Pull (avg goals_for_per_match, avg goals_against_per_match) from a
     /teams/statistics payload. Falls back to None when the season hasn't
-    produced enough data yet."""
+    produced enough data yet (< 5 matches)."""
     if not stats:
         return None, None
     try:
+        # Check matches played — don't trust averages from 1-2 games
+        fixtures = stats.get("fixtures", {})
+        played = (fixtures.get("played", {}).get("total") or 0)
+        if played < MIN_SEASON_MATCHES_FOR_AVG:
+            return None, None
         gf = stats.get("goals", {}).get("for", {}).get("average", {}).get("total")
         ga = stats.get("goals", {}).get("against", {}).get("average", {}).get("total")
         gf_f = float(gf) if gf not in (None, "") else None
