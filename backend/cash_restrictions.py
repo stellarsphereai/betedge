@@ -58,7 +58,6 @@ def is_market_restricted(
     # and CLV >= 0.
     is_restricted = (
         m in RESTRICTED_CASH_MARKETS
-        or (m == "totals" and o == "over")
         or (m == "h2h" and o == "draw")
     )
     if is_restricted:
