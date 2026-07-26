@@ -156,6 +156,7 @@ export default function PerformanceBenchmark({ league }) {
 
   if (loading) return <div className="text-slate-500 text-sm p-4">Loading performance data...</div>
   if (!data || (!data.monthly?.length && !data.projection?.length)) return <div className="text-slate-500 text-sm p-4">No performance data yet — bets will appear once the season starts.</div>
+  // v2 - force cache bust
 
   const current = data.current_month
   const chartData = data.monthly.map(m => ({
