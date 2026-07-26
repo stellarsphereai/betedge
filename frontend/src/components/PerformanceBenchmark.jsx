@@ -63,10 +63,12 @@ function MonthRow({ m }) {
         const leagueShare = d.bets / totalBets
         const leagueTarget = (m.target_pnl || 0) * leagueShare
         const remaining = leagueTarget - d.pnl
-        // Don't show target/to-target if no open bets and month is past or current
-        const hasOpenBets = d.open > 0
+        // Only mark "Complete" for leagues whose season is over (e.g. WC in July).
+        // Active leagues (MLS, EPL, etc.) may have settled bets with no open bets
+        // simply because the next round hasn't been bet on yet.
+        const FINISHED_LEAGUES = { world_cup: '2026-07' } // league -> last active month
         const isCurrentOrPast = m.month <= new Date().toISOString().slice(0, 7)
-        const leagueDone = isCurrentOrPast && !hasOpenBets && (d.won + d.lost) > 0
+        const leagueDone = isCurrentOrPast && FINISHED_LEAGUES[lg] && m.month >= FINISHED_LEAGUES[lg]
         const winsNeeded = (!leagueDone && remaining > 0 && d.avg_win_profit > 0)
           ? Math.ceil(remaining / d.avg_win_profit)
           : 0
