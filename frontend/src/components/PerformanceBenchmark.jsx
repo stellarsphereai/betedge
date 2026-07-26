@@ -57,22 +57,39 @@ function MonthRow({ m }) {
           </span>
         </td>
       </tr>
-      {expanded && leagues.map(lg => {
-        const d = m.by_league[lg]
-        const totalBets = m.bets || 1
-        const leagueShare = d.bets / totalBets
-        const leagueTarget = (m.target_pnl || 0) * leagueShare
-        const remaining = leagueTarget - d.pnl
-        // Only mark "Complete" for leagues whose season is over (e.g. WC in July).
-        // Active leagues (MLS, EPL, etc.) may have settled bets with no open bets
-        // simply because the next round hasn't been bet on yet.
-        const FINISHED_LEAGUES = { world_cup: '2026-07' } // league -> last active month
+      {expanded && (() => {
+        const FINISHED_LEAGUES = { world_cup: '2026-07' }
         const isCurrentOrPast = m.month <= new Date().toISOString().slice(0, 7)
-        const leagueDone = isCurrentOrPast && FINISHED_LEAGUES[lg] && m.month >= FINISHED_LEAGUES[lg]
-        const winsNeeded = (!leagueDone && remaining > 0 && d.avg_win_profit > 0)
-          ? Math.ceil(remaining / d.avg_win_profit)
-          : 0
-        return (
+
+        // Figure out which leagues are done and which are active
+        const leagueStatus = {}
+        for (const lg of leagues) {
+          leagueStatus[lg] = isCurrentOrPast && FINISHED_LEAGUES[lg] && m.month >= FINISHED_LEAGUES[lg]
+        }
+
+        // Total P&L from finished leagues
+        const finishedPnl = leagues
+          .filter(lg => leagueStatus[lg])
+          .reduce((sum, lg) => sum + (m.by_league[lg]?.pnl || 0), 0)
+
+        // Remaining target is total target minus what finished leagues delivered
+        const remainingTarget = (m.target_pnl || 0) - finishedPnl
+        const activeLeagues = leagues.filter(lg => !leagueStatus[lg])
+        const activeCount = activeLeagues.length || 1
+
+        return leagues.map(lg => {
+          const d = m.by_league[lg]
+          const done = leagueStatus[lg]
+
+          // Split remaining target equally among active leagues
+          const leagueTarget = done ? 0 : remainingTarget / activeCount
+          const remaining = leagueTarget - d.pnl
+          const avgWin = d.avg_win_profit || (m.avg_win_profit || 65)
+          const winsNeeded = (!done && remaining > 0 && avgWin > 0)
+            ? Math.ceil(remaining / avgWin)
+            : 0
+
+          return (
           <tr key={`${m.month}-${lg}`} className="border-b border-ink-800/50 bg-ink-800/30">
             <td className="py-1 pl-6 text-slate-400 text-[11px]">{LEAGUE_NAMES[lg] || lg}</td>
             <td className="text-right text-slate-400 text-[11px]">{d.won}–{d.lost}</td>
@@ -81,14 +98,15 @@ function MonthRow({ m }) {
             <td className="text-right text-good font-mono text-[11px]">{d.avg_win_profit ? `+$${d.avg_win_profit.toFixed(0)}` : '—'}</td>
             <td className="text-right text-red-400 font-mono text-[11px]">{d.avg_loss ? `-$${Math.abs(d.avg_loss).toFixed(0)}` : '—'}</td>
             <td className="text-right text-slate-500 text-[11px]"></td>
-            <td className="text-right text-slate-500 text-[11px]">{leagueDone ? '—' : fmtMoney(leagueTarget)}</td>
+            <td className="text-right text-slate-500 text-[11px]">{done ? '—' : fmtMoney(leagueTarget)}</td>
             <td className="text-right text-slate-400 text-[11px]">
-              {leagueDone ? 'Complete' : winsNeeded > 0 ? `${winsNeeded} wins × $${d.avg_win_profit?.toFixed(0) || '?'}` : '—'}
+              {done ? 'Complete' : winsNeeded > 0 ? `${winsNeeded} wins × $${avgWin.toFixed(0)}` : '—'}
             </td>
             <td className="text-[11px]"></td>
           </tr>
         )
-      })}
+      })
+      })()}
     </>
   )
 }
