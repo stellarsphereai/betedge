@@ -102,6 +102,7 @@ LEAGUE_TO_SPORT_KEY = {
     "world_cup": "soccer_fifa_world_cup",
     "la_liga": "soccer_spain_la_liga",
     "mls": "soccer_usa_mls",
+    "liga_mx": "soccer_mexico_ligamx",
 }
 
 
@@ -1279,12 +1280,12 @@ async def get_performance(league: str | None = None):
     ]
     # Expected bets/week per league by period
     LEAGUE_VOLUME = {
-        # Aug-Sep: EPL + La Liga + MLS (UCL/UEL start mid-Sep)
-        "early": {"epl": 10, "la_liga": 5, "mls": 6},
+        # Aug-Sep: EPL + La Liga + MLS + Liga MX (UCL/UEL start mid-Sep)
+        "early": {"epl": 10, "la_liga": 5, "mls": 6, "liga_mx": 5},
         # Oct: all leagues including MLS (MLS ends mid-Oct)
-        "full": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2, "mls": 6},
-        # Nov-May: European leagues only (MLS off-season)
-        "winter": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2},
+        "full": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2, "mls": 6, "liga_mx": 5},
+        # Nov-May: European leagues + Liga MX (MLS off-season)
+        "winter": {"epl": 10, "la_liga": 5, "ucl": 4, "uel": 2, "liga_mx": 5},
     }
     existing_months = {m["month"] for m in monthly}
     proj_bankroll = running_bankroll + cumulative_pnl if monthly else initial_bankroll

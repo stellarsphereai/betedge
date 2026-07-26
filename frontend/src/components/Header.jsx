@@ -24,6 +24,7 @@ export default function Header({ league, onLeagueChange, windowHours, onWindowCh
     { id: 'world_cup', label: 'World Cup' },
     { id: 'la_liga', label: 'La Liga' },
     { id: 'mls', label: 'MLS' },
+    { id: 'liga_mx', label: 'Liga MX' },
   ]
 
   // Only the World Cup is the live-recommendation league per spec; everything

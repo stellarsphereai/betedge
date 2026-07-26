@@ -34,6 +34,7 @@ LEAGUE_TO_SPORT_KEY = {
     "world_cup": "soccer_fifa_world_cup",
     "la_liga": "soccer_spain_la_liga",
     "mls": "soccer_usa_mls",
+    "liga_mx": "soccer_mexico_ligamx",
 }
 
 

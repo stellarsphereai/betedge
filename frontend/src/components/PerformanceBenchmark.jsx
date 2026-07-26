@@ -20,7 +20,7 @@ const BENCHMARK_LABELS = {
 }
 
 const LEAGUE_NAMES = {
-  epl: 'EPL', la_liga: 'La Liga', ucl: 'UCL', uel: 'EL', world_cup: 'World Cup', mls: 'MLS',
+  epl: 'EPL', la_liga: 'La Liga', ucl: 'UCL', uel: 'EL', world_cup: 'World Cup', mls: 'MLS', liga_mx: 'Liga MX',
 }
 
 function MonthRow({ m }) {

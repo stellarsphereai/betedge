@@ -43,6 +43,7 @@ LEAGUE_TO_SPORT_KEY = {
     "world_cup": "soccer_fifa_world_cup",
     "la_liga": "soccer_spain_la_liga",
     "mls": "soccer_usa_mls",
+    "liga_mx": "soccer_mexico_ligamx",
 }
 
 _scheduler: AsyncIOScheduler | None = None
@@ -701,6 +702,7 @@ _JOB_LABELS = {
     "sync_world_cup":       "World Cup sync",
     "sync_la_liga":         "La Liga sync",
     "sync_mls":             "MLS sync",
+    "sync_liga_mx":         "Liga MX sync",
     "pre_kickoff_clv":      "Pre-kickoff CLV capture (live odds)",
     "auto_paper_bets":      "Auto-place paper bets (BTTS + totals over)",
     "morning_ev":           "Morning EV pre-warm",
@@ -813,6 +815,7 @@ def build() -> AsyncIOScheduler:
         ("sync_la_liga",     _league_sync_job("la_liga"),   CronTrigger(hour=0,  minute=30, timezone=TIMEZONE)),
         ("sync_ucl",         _league_sync_job("ucl"),       CronTrigger(hour=1,  minute=0,  timezone=TIMEZONE)),
         ("sync_mls",         _league_sync_job("mls"),       CronTrigger(hour=1,  minute=15, timezone=TIMEZONE)),
+        ("sync_liga_mx",     _league_sync_job("liga_mx"),   CronTrigger(hour=1,  minute=45, timezone=TIMEZONE)),
         ("sync_uel",         _league_sync_job("uel"),       CronTrigger(hour=1,  minute=30, timezone=TIMEZONE)),
         ("auto_settle",           job_auto_settle_open_bets,     CronTrigger(hour=2,  minute=30, timezone=TIMEZONE)),
         ("settle_fixtures",        job_settle_fixtures,          CronTrigger(hour=2,  minute=45, timezone=TIMEZONE)),

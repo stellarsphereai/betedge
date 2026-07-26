@@ -565,6 +565,7 @@ LEAGUE_CONFIG_SEED: list[tuple] = [
     ("world_cup",  1, "FIFA World Cup",        1.20, 0.70, 0.30, 0.10, 0.15),
     ("la_liga",  140, "La Liga",               1.30, 0.60, 0.40, 0.15, 0.20),
     ("mls",      253, "Major League Soccer",   1.32, 0.60, 0.40, 0.15, 0.20),
+    ("liga_mx",  262, "Liga MX",               1.35, 0.60, 0.40, 0.15, 0.20),
 ]
 
 

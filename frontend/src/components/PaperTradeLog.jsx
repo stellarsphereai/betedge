@@ -365,7 +365,7 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeC
           <option value="">All tournaments</option>
           {availableLeagues.map(lg => (
             <option key={lg} value={lg}>
-              {lg === 'epl' ? 'EPL' : lg === 'ucl' ? 'UCL' : lg === 'uel' ? 'Europa League' : lg === 'world_cup' ? 'World Cup' : lg === 'la_liga' ? 'La Liga' : lg === 'mls' ? 'MLS' : lg}
+              {lg === 'epl' ? 'EPL' : lg === 'ucl' ? 'UCL' : lg === 'uel' ? 'Europa League' : lg === 'world_cup' ? 'World Cup' : lg === 'la_liga' ? 'La Liga' : lg === 'mls' ? 'MLS' : lg === 'liga_mx' ? 'Liga MX' : lg}
             </option>
           ))}
         </select>

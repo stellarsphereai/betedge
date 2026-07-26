@@ -74,7 +74,7 @@ def _min_edge_for_league(league: Optional[str]) -> float:
     lg = (league or "").lower()
     if lg == "world_cup":
         return CASH_MIN_EDGE_WC
-    if lg == "mls":
+    if lg in ("mls", "liga_mx"):
         return CASH_MIN_EDGE_MLS
     return CASH_MIN_EDGE
 
@@ -308,6 +308,6 @@ def restriction_status() -> dict:
         "goal_market_progress": goal_market_paper_progress(),
         "goal_market_progress_by_league": {
             lg: goal_market_paper_progress(league=lg)
-            for lg in ("epl", "la_liga", "ucl", "uel", "mls")
+            for lg in ("epl", "la_liga", "ucl", "uel", "mls", "liga_mx")
         },
     }

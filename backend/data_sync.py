@@ -36,6 +36,7 @@ LEAGUE_TO_API_FOOTBALL = {
     "world_cup": api_football.WORLD_CUP_LEAGUE_ID,
     "la_liga": 140,
     "mls": 253,
+    "liga_mx": 262,
 }
 
 # Per-league fixture-lookahead window. EPL's weekly cadence makes a short
@@ -43,7 +44,7 @@ LEAGUE_TO_API_FOOTBALL = {
 # so all fixtures (group + early knockout) land in a single sync. WC's 35
 # days covers the entire group stage in one pull and continues catching
 # knockouts as they're scheduled into the API.
-LOOKAHEAD_DAYS_BY_LEAGUE = {"epl": 7, "ucl": 14, "uel": 14, "world_cup": 35, "la_liga": 7, "mls": 7}
+LOOKAHEAD_DAYS_BY_LEAGUE = {"epl": 7, "ucl": 14, "uel": 14, "world_cup": 35, "la_liga": 7, "mls": 7, "liga_mx": 7}
 LOOKAHEAD_DAYS_DEFAULT = 7
 RECENT_FORM_WINDOW = 10  # last 10 matches blended with season-long averages
 
@@ -53,6 +54,9 @@ def _current_season(league: str, today: datetime | None = None) -> int:
     today = today or datetime.now(timezone.utc)
     if league in ("world_cup", "mls"):
         return today.year  # single calendar-year seasons
+    if league == "liga_mx":
+        # Apertura (Jul-Dec) uses current year, Clausura (Jan-May) uses prior year
+        return today.year if today.month >= 6 else today.year - 1
     # EPL: Aug→May. After July use this calendar year, else previous.
     return today.year if today.month >= 8 else today.year - 1
 
