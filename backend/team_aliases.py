@@ -80,6 +80,28 @@ _ALIASES = {
     "cape verde islands": "Cape Verde Islands",
     "cabo verde": "Cape Verde Islands",
     "czechia": "Czech Republic",
+    # Liga MX — API-Football uses "CF Pachuca", odds API uses "Pachuca", etc.
+    "cf pachuca": "Pachuca",
+    "club queretaro": "Querétaro",
+    "queretaro": "Querétaro",
+    "guadalajara chivas": "Guadalajara",
+    "cd guadalajara": "Guadalajara",
+    "chivas": "Guadalajara",
+    "u n a m   pumas": "Pumas",
+    "unam pumas": "Pumas",
+    "pumas unam": "Pumas",
+    "u n a m  pumas": "Pumas",
+    "club america": "América",
+    "club tijuana": "Tijuana",
+    "santos laguna": "Santos Laguna",
+    "tigres uanl": "Tigres",
+    "atletico san luis": "Atlético San Luis",
+    "atletico de san luis": "Atlético San Luis",
+    "fc juarez": "FC Juárez",
+    "club leon": "León",
+    "cf monterrey": "Monterrey",
+    "atlante fc": "Atlante FC",
+    "cruz azul": "Cruz Azul",
 }
 
 
