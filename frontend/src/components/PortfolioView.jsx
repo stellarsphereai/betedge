@@ -801,7 +801,7 @@ export default function PortfolioView() {
   // and real-money performance can be inspected separately or together.
   const [mode, setMode] = useState(saved?.mode || 'paper')
   const paperOnly = mode === 'paper'
-  const [filters, setFilters] = useState({ league: saved?.league || '', market: '', status: '', dateFrom: '', dateTo: '' })
+  const [filters, setFilters] = useState({ league: '', market: '', status: '', dateFrom: '', dateTo: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [viewSaved, setViewSaved] = useState(!!saved)
