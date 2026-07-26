@@ -583,11 +583,22 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
         else:
             try:
                 for tid in team_ids:
-                    team_recent[tid] = await api_football.team_recent_fixtures(
+                    recent = await api_football.team_recent_fixtures(
                         client, tid, last=RECENT_FORM_WINDOW,
                         league=league_id, season=season,
                         force=force,
                     )
+                    # For leagues with split seasons (Liga MX Apertura/Clausura),
+                    # supplement with prior season if current season has < 5 matches
+                    if len(recent) < 5 and league == "liga_mx":
+                        prev_season = season - 1
+                        prev = await api_football.team_recent_fixtures(
+                            client, tid, last=RECENT_FORM_WINDOW - len(recent),
+                            league=league_id, season=prev_season,
+                            force=force,
+                        )
+                        recent = recent + prev
+                    team_recent[tid] = recent
             except api_football.PlanError as e:
                 summary["errors"].append(f"team-recent blocked ({e})")
                 return summary
