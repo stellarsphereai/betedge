@@ -351,6 +351,7 @@ function BetTable({ bets, league, market, status, dateFrom, dateTo }) {
               <Th col="edge_at_placement" right>Edge</Th>
               <Th col="ev" right>EV</Th>
               <Th col="status">Status</Th>
+              <Th col="potential" right>If Win</Th>
               <Th col="profit" right>P&L</Th>
               <Th col="clv" right>CLV</Th>
             </tr>
@@ -389,6 +390,11 @@ function BetTable({ bets, league, market, status, dateFrom, dateTo }) {
                   <td className="px-2 py-1.5 text-right tabular-nums">{fmtPct(b.edge_at_placement)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">{fmtMoney(ev, { signed: true })}</td>
                   <td className="px-2 py-1.5"><StatusPill status={b.status} /></td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-good">
+                    {b.status === 'open'
+                      ? `+${fmtMoney((b.stake || 0) * ((b.odds_at_placement || 1) - 1))}`
+                      : '—'}
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{pnlCell}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">{b.clv != null ? fmtPct(b.clv, { signed: true }) : '—'}</td>
                 </tr>
