@@ -138,6 +138,7 @@ def _team_xg_history(
     *,
     knockout_only_for_ucl: bool = False,
     opponent_ratings: dict[int, dict] | None = None,
+    **kwargs,
 ) -> tuple[list[float], list[float], dict]:
     """From a team's recent fixtures + cached stats, return (xg_for, xg_against)
     most recent first.
@@ -177,6 +178,21 @@ def _team_xg_history(
         xg_self = api_football.expected_goals_for(stats, team_id)
         opp_id = a_id if team_id == h_id else h_id
         xg_opp = api_football.expected_goals_for(stats, opp_id)
+        # FBref fallback when API-Football has no xG (common for non-UEFA leagues)
+        if xg_self is None or xg_opp is None:
+            fbref_data = kwargs.get("fbref_data")
+            if fbref_data:
+                import fbref as _fbref
+                from team_aliases import canonical
+                h_name = canonical(fx["teams"]["home"]["name"])
+                a_name = canonical(fx["teams"]["away"]["name"])
+                fb_home, fb_away = _fbref.find_match_xg(
+                    fbref_data, h_name, a_name,
+                    match_date=fx["fixture"].get("date"),
+                )
+                if fb_home is not None and fb_away is not None:
+                    xg_self = fb_home if team_id == h_id else fb_away
+                    xg_opp = fb_away if team_id == h_id else fb_home
         if xg_self is None or xg_opp is None:
             continue
         # Fix B: per-game opponent-strength adjustment.
@@ -612,6 +628,14 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 except api_football.PlanError as e:
                     summary["errors"].append(f"stats for {fid} blocked ({e})")
 
+            # FBref secondary xG source — fills gaps where API-Football has no xG
+            fbref_season_data: dict = {}
+            try:
+                import fbref
+                fbref_season_data = await fbref.fetch_season_xg(client, league, season)
+            except Exception as e:
+                log.warning("fbref fetch failed for %s: %s", league, e)
+
         # 4b. Per-team season averages (goals for/against per match) — feed
         # the blend in model.team_strengths so a hot/cold 10-game stretch is
         # tempered by the team's full-season baseline.
@@ -682,11 +706,13 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                 home_id, team_recent.get(home_id, []), stats_cache,
                 knockout_only_for_ucl=is_tournament_knockout,
                 opponent_ratings=ratings_snapshot,
+                fbref_data=fbref_season_data,
             )
             away_xg_for, away_xg_against, away_xg_info = _team_xg_history(
                 away_id, team_recent.get(away_id, []), stats_cache,
                 knockout_only_for_ucl=is_tournament_knockout,
                 opponent_ratings=ratings_snapshot,
+                fbref_data=fbref_season_data,
             )
             # WC fallback — API-Football only carries expected_goals for
             # UEFA WC qualifiers; CONMEBOL/AFC/CAF/CONCACAF/OFC return
