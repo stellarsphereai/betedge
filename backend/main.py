@@ -67,6 +67,17 @@ MIN_BOOK_COVERAGE = {
 }
 MAX_STAKE_PCT = float(os.getenv("MAX_STAKE_PCT", "0.02"))
 MIN_ODDS = float(os.getenv("MIN_ODDS", "1.70"))
+# Per-market min odds — totals under needs higher odds to be profitable
+# (55% win rate but avg odds 1.60 means wins don't cover losses)
+MIN_ODDS_BY_MARKET = {
+    "totals:under": 1.80,
+    "totals:over": 1.70,
+    "h2h:home": 1.70,
+    "h2h:away": 1.70,
+    "h2h:draw": 2.50,  # draws only valuable at long odds
+    "btts:yes": 1.70,
+    "btts:no": 1.70,
+}
 
 # WC-specific guardrails (real-money betting on a sparse, structurally weaker
 # corpus). Tighter floor on edge, smaller stake cap, only HIGH-confidence
@@ -118,12 +129,23 @@ def _league_risk_config(league: str, base_min_edge: float) -> dict:
             "daily_loss_cap_pct": WC_DAILY_LOSS_CAP_PCT,
             "real_money": True,
         }
+    # Per-league risk config — leagues with less data or less efficient
+    # markets get different thresholds.
+    LEAGUE_CONFIG = {
+        "epl":     {"min_edge": 0.10, "daily_loss_cap_pct": 0.03},
+        "la_liga": {"min_edge": 0.10, "daily_loss_cap_pct": 0.03},
+        "ucl":     {"min_edge": 0.10, "daily_loss_cap_pct": 0.03},
+        "uel":     {"min_edge": 0.10, "daily_loss_cap_pct": 0.03},
+        "mls":     {"min_edge": 0.05, "daily_loss_cap_pct": 0.04},
+        "liga_mx": {"min_edge": 0.05, "daily_loss_cap_pct": 0.04},
+    }
+    cfg = LEAGUE_CONFIG.get(league, {})
     return {
-        "min_edge": base_min_edge,
+        "min_edge": max(base_min_edge, cfg.get("min_edge", 0.03)),
         "max_stake_pct": MAX_STAKE_PCT,
         "min_confidence": None,
         "require_market_agreement": False,
-        "daily_loss_cap_pct": None,
+        "daily_loss_cap_pct": cfg.get("daily_loss_cap_pct"),
         "real_money": True,
     }
 
@@ -674,8 +696,10 @@ async def get_ev_bets(
                     offer_lookup[("totals", line)] = by_book
 
         for b in ev_bets:
-            # Minimum odds filter — skip bets where wins don't cover losses
-            if b.decimal_odds < MIN_ODDS:
+            # Per-market minimum odds — totals under needs 1.80+, draws need 2.50+
+            market_key = f"{b.market}:{b.outcome}"
+            min_odds = MIN_ODDS_BY_MARKET.get(market_key, MIN_ODDS)
+            if b.decimal_odds < min_odds:
                 continue
             offers = offer_lookup.get((b.market, b.market_line)) or {}
             outcome_offers = {bk: o[b.outcome] for bk, o in offers.items() if b.outcome in o}

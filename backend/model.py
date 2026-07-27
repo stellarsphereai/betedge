@@ -325,36 +325,31 @@ def predict(
         confidence = "LOW"
 
     rounded_matrix = [[round(p, 5) for p in row] for row in matrix]
+    # Bivariate Poisson correction for BTTS.
+    #
+    # Standard Poisson assumes home/away goals are independent, but football
+    # has negative correlation: when one team scores, the trailing team opens
+    # up (concedes more) while the leading team sits back (scores less).
+    # This systematically overstates BTTS Yes.
+    #
+    # The correction applies a game-state covariance factor that reduces
+    # P(both score) based on the expected goal difference. In lopsided
+    # matches (high xG difference), one team is likely to dominate and
+    # shut the other out. In even matches, both scoring is more likely.
+    #
+    # This replaces the old band-aid fixes (low-xG dampener + 0.85 global
+    # discount) with a structurally motivated adjustment.
     btts_yes = _btts_yes_from_matrix(matrix)
-    # Fix 1 — when one side has very low predicted xG, the Poisson-based
-    # BTTS Yes calc tends to overstate the both-teams-score probability
-    # (independence between the two scoring distributions doesn't hold
-    # for low-scoring teams that often produce 0 across whole matches).
-    # Empirically the model has been calling BTTS Yes on lopsided
-    # matchups and losing — apply a multiplicative dampener and
-    # renormalize implicitly (BTTS No = 1 - BTTS Yes).
-    btts_low_xg_adjustment_applied = False
-    if away_xg < 0.70:
-        btts_yes *= 0.75
-        btts_low_xg_adjustment_applied = True
-    elif away_xg < 1.00:
-        btts_yes *= 0.85
-        btts_low_xg_adjustment_applied = True
-    # Same dampener mirrored for low home_xg (rare but possible — heavy
-    # away favorite at a struggling host).
-    if home_xg < 0.70:
-        btts_yes *= 0.75
-        btts_low_xg_adjustment_applied = True
-    elif home_xg < 1.00:
-        btts_yes *= 0.85
-        btts_low_xg_adjustment_applied = True
-    # Fix 4 — global BTTS discount. The Poisson independence assumption
-    # systematically overstates BTTS Yes (game state, tactics, and
-    # defensive adjustments after conceding are not modeled). Settled
-    # bets show 31% BTTS win rate vs model predictions of ~50-60%.
-    # Apply a flat 0.85x discount on top of the low-xG dampener.
-    _BTTS_GLOBAL_DISCOUNT = 0.85
-    btts_yes *= _BTTS_GLOBAL_DISCOUNT
+
+    # Covariance factor: how lopsided is this match?
+    xg_ratio = max(home_xg, away_xg) / max(min(home_xg, away_xg), 0.3)
+    # ratio=1.0 (even) → correction ~0.92 (slight reduction)
+    # ratio=2.0 (lopsided) → correction ~0.75
+    # ratio=3.0+ (mismatch) → correction ~0.65
+    _BTTS_EVEN_BASELINE = 0.92   # even-match BTTS discount (replaces old 0.85 global)
+    _BTTS_LOPSIDED_SCALE = 0.12  # extra discount per unit of ratio above 1.0
+    btts_correction = max(0.50, _BTTS_EVEN_BASELINE - (xg_ratio - 1.0) * _BTTS_LOPSIDED_SCALE)
+    btts_yes *= btts_correction
 
     btts_yes = max(0.0, min(1.0, btts_yes))
 
