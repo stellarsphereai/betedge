@@ -50,7 +50,7 @@ async def _rate_limited_get(client: httpx.AsyncClient, url: str) -> httpx.Respon
     _last_request_time = time.monotonic()
     return await client.get(
         url,
-        headers={"User-Agent": "BetEdge/1.0 (sports analytics research)"},
+        headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
         timeout=20.0,
         follow_redirects=True,
     )

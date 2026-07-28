@@ -363,7 +363,7 @@ def predict(
         away_win_pct=round(away_win, 4),
         btts_yes_pct=round(btts_yes, 4),
         btts_no_pct=round(1.0 - btts_yes, 4),
-        btts_low_xg_adjustment_applied=btts_low_xg_adjustment_applied,
+        btts_low_xg_adjustment_applied=False,  # legacy field — bivariate Poisson replaced the old dampener
         confidence=confidence,
         score_matrix=rounded_matrix,
         home_penalties_applied=home_pens,
