@@ -701,6 +701,15 @@ async def get_ev_bets(
             min_odds = MIN_ODDS_BY_MARKET.get(market_key, MIN_ODDS)
             if b.decimal_odds < min_odds:
                 continue
+            # Consistency check: don't bet over if predicted total xG is below the line
+            # (and vice versa for under). Prevents contradictions where the most likely
+            # score implies fewer goals than the over line.
+            if b.market == "totals" and b.market_line is not None:
+                total_xg = (p.get("home_xg") or 0) + (p.get("away_xg") or 0)
+                if b.outcome == "over" and total_xg < b.market_line:
+                    continue
+                if b.outcome == "under" and total_xg > b.market_line + 1:
+                    continue
             offers = offer_lookup.get((b.market, b.market_line)) or {}
             outcome_offers = {bk: o[b.outcome] for bk, o in offers.items() if b.outcome in o}
             shop = line_shopper.best_line(outcome_offers, opening_odds=None, edge=b.edge)
