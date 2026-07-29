@@ -24,7 +24,7 @@ LEAGUE_AVG_GOALS: dict[int, float] = {
     2:  1.35,   # UCL
     3:  1.30,   # Europa League
     1:  1.20,   # World Cup
-    253: 1.50,  # MLS (~3.00 goals/game ÷ 2)
+    253: 1.55,  # MLS (~3.10 goals/game ÷ 2, higher-scoring league)
     262: 1.35,  # Liga MX (~2.70 goals/game ÷ 2)
     140: 1.35,  # La Liga (~2.70 goals/game ÷ 2)
 }
