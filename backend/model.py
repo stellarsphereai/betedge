@@ -20,10 +20,13 @@ PENALTY_FLOOR = 0.85
 # Numbers are rolling multi-season EPL ≈ 1.40, UCL ≈ 1.35, EL ≈ 1.30, WC ≈ 1.20.
 # Keys are API-Football league IDs.
 LEAGUE_AVG_GOALS: dict[int, float] = {
-    39: 1.40,   # EPL
+    39: 1.40,   # EPL (~2.80 goals/game ÷ 2)
     2:  1.35,   # UCL
     3:  1.30,   # Europa League
     1:  1.20,   # World Cup
+    253: 1.50,  # MLS (~3.00 goals/game ÷ 2)
+    262: 1.35,  # Liga MX (~2.70 goals/game ÷ 2)
+    140: 1.35,  # La Liga (~2.70 goals/game ÷ 2)
 }
 LEAGUE_AVG_DEFAULT = 1.35
 
