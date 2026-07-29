@@ -483,7 +483,8 @@ async def get_ev_bets(
         preds = conn.execute(
             """
             SELECT match_id, home_team, away_team, home_win_pct, draw_pct,
-                   away_win_pct, btts_yes_pct, score_matrix_json, confidence
+                   away_win_pct, btts_yes_pct, score_matrix_json, confidence,
+                   home_xg, away_xg
             FROM model_predictions
             WHERE league = ?
             ORDER BY created_at DESC
