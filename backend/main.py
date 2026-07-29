@@ -705,7 +705,7 @@ async def get_ev_bets(
             # (and vice versa for under). Prevents contradictions where the most likely
             # score implies fewer goals than the over line.
             if b.market == "totals" and b.market_line is not None:
-                total_xg = (p.get("home_xg") or 0) + (p.get("away_xg") or 0)
+                total_xg = (p["home_xg"] or 0) + (p["away_xg"] or 0)
                 if b.outcome == "over" and total_xg < b.market_line:
                     continue
                 if b.outcome == "under" and total_xg > b.market_line + 1:
