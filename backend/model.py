@@ -193,10 +193,11 @@ def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS,
             recent_for * b + sa_for * (1 - b),
             recent_against * b + sa_against * (1 - b),
         )
-    # Clamp final strengths to reasonable bounds — no team should have
-    # attack > 2.5 or defense < 0.3 per game. Prevents noisy data from
-    # producing absurd predictions (Querétaro at 65% home vs Tigres).
-    return (min(recent_for, 2.5), max(recent_against, 0.3))
+    # Clamp final strengths to reasonable bounds. Attack capped at league avg × 1.5
+    # (top teams create ~50% more xG than average, not 100%+). Defense floored at 0.3.
+    avg = league_avg_goals(league_id)
+    max_attack = avg * 1.5  # EPL: 2.1, MLS: 2.33, Liga MX: 2.03
+    return (min(recent_for, max_attack), max(recent_against, 0.3))
 
 
 def _poisson_pmf(k: int, lam: float) -> float:
