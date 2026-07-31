@@ -718,6 +718,16 @@ async def get_ev_bets(
             min_odds = MIN_ODDS_BY_MARKET.get(market_key, MIN_ODDS)
             if b.decimal_odds < min_odds:
                 continue
+            # H2H consistency: don't bet on an outcome the model says is less likely
+            # than the alternative. E.g., don't bet Santos away (33.6%) when the model
+            # says América home (40.6%) is more likely.
+            if b.market == "h2h" and b.outcome in ("home", "away"):
+                h_prob = p["home_win_pct"] or 0
+                a_prob = p["away_win_pct"] or 0
+                if b.outcome == "home" and h_prob < a_prob:
+                    continue  # model says away is more likely
+                if b.outcome == "away" and a_prob < h_prob:
+                    continue  # model says home is more likely
             # Consistency check: don't bet over if predicted total xG is below the line
             # (and vice versa for under). Prevents contradictions where the most likely
             # score implies fewer goals than the over line.
