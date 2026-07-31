@@ -153,6 +153,11 @@ def detect_sharp_divergence(
     threshold = league_config.thresholds_for_league(league or "").sharp_divergence
     if delta < threshold:
         return out
+    # If both model and book agree the outcome is >50% likely (same direction),
+    # the model just sees more value — that's a real edge, not a divergence.
+    # Only flag when the model disagrees with market direction.
+    if model_p > 0.50 and book_p > 0.35:
+        return out  # both think this outcome is likely, model just more confident
     out.append(Anomaly(
         anomaly_type="SHARP_DIVERGE",
         description=(
@@ -200,6 +205,11 @@ def detect_market_consensus_divergence(
     delta = model_p - consensus_prob
     if abs(delta) <= threshold:
         return out
+    # If model and market agree on direction (both favor this outcome),
+    # the model just sees more value. Don't flag as divergence — that's
+    # a real edge, not the model being wrong.
+    if delta > 0 and consensus_prob > 0.35:
+        return out  # market also thinks it's likely, model just more bullish
     direction = "above" if delta > 0 else "below"
     out.append(Anomaly(
         anomaly_type="MARKET_CONSENSUS_DIVERGENCE",
