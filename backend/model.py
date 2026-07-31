@@ -149,11 +149,18 @@ def _over_from_matrix(matrix: list[list[float]], line: float) -> float:
     )
 
 
+# Cap per-match xG to prevent noisy data from inflating predictions.
+# No team realistically creates 4.0+ xG in a match — values above this
+# are data quality issues from weaker leagues (Liga MX Clausura, etc.)
+_PER_MATCH_XG_CAP = 3.5
+
+
 def _weighted_avg(values: list[float], weights: tuple[float, ...]) -> float:
     if not values:
         return 0.0
-    w = list(weights[: len(values)])
-    return sum(v * x for v, x in zip(values, w)) / sum(w)
+    capped = [min(v, _PER_MATCH_XG_CAP) for v in values]
+    w = list(weights[: len(capped)])
+    return sum(v * x for v, x in zip(capped, w)) / sum(w)
 
 
 _SMALL_SAMPLE_THRESHOLD = 3  # teams with fewer games get reduced season-avg weight
@@ -186,7 +193,10 @@ def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS,
             recent_for * b + sa_for * (1 - b),
             recent_against * b + sa_against * (1 - b),
         )
-    return (recent_for, recent_against)
+    # Clamp final strengths to reasonable bounds — no team should have
+    # attack > 2.5 or defense < 0.3 per game. Prevents noisy data from
+    # producing absurd predictions (Querétaro at 65% home vs Tigres).
+    return (min(recent_for, 2.5), max(recent_against, 0.3))
 
 
 def _poisson_pmf(k: int, lam: float) -> float:
