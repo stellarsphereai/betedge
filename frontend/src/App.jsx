@@ -72,6 +72,9 @@ export default function App() {
     }
   }
 
+  const [dataVersion, setDataVersion] = useState(null)
+  const [newDataAvailable, setNewDataAvailable] = useState(false)
+
   // Initial fetch on mount + on league switch. No background polling — the
   // user clicks "Refresh odds" when they want fresh data. The Odds API meters
   // by markets×regions, so a 30s polling loop burns ~3,000 credits/hour.
@@ -79,6 +82,22 @@ export default function App() {
     const id = setTimeout(loadAll, 200)
     return () => clearTimeout(id)
   }, [league])
+
+  // Poll /data-version every 60s to detect backend updates (syncs, settlements).
+  // Lightweight — no Odds API credits burned, just a DB query.
+  useEffect(() => {
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch('/data-version')
+        const d = await r.json()
+        if (dataVersion && d.version !== dataVersion) {
+          setNewDataAvailable(true)
+        }
+        if (!dataVersion) setDataVersion(d.version)
+      } catch {}
+    }, 60000)
+    return () => clearInterval(poll)
+  }, [dataVersion])
 
   // Show matches kicking off in [-3h, +windowHours]. The future window is
   // user-controlled via the header dropdown.
@@ -248,6 +267,19 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
       />
+
+      {newDataAvailable && (
+        <button
+          onClick={() => {
+            setNewDataAvailable(false)
+            setDataVersion(null)
+            loadAll({ force: true })
+          }}
+          className="w-full mb-3 px-4 py-3 rounded-lg bg-accent text-white font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition animate-pulse"
+        >
+          New data available — click to refresh
+        </button>
+      )}
 
       <RestrictionsBanner restrictions={restrictions} />
 

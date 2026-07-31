@@ -383,6 +383,22 @@ async def run_model(payload: RunModelInput):
     return {"count": len(results), "predictions": results}
 
 
+@app.get("/data-version")
+async def data_version():
+    """Lightweight endpoint for the frontend to poll. Returns a version
+    string that changes whenever predictions or bets are updated."""
+    with db() as conn:
+        row = conn.execute("""
+            SELECT
+              (SELECT MAX(created_at) FROM model_predictions) AS last_prediction,
+              (SELECT MAX(timestamp) FROM bets_placed) AS last_bet,
+              (SELECT COUNT(*) FROM model_predictions) AS pred_count,
+              (SELECT COUNT(*) FROM bets_placed WHERE status='open') AS open_bets
+        """).fetchone()
+    version = f"{row['last_prediction']}|{row['last_bet']}|{row['pred_count']}|{row['open_bets']}"
+    return {"version": version, "last_prediction": row["last_prediction"], "last_bet": row["last_bet"]}
+
+
 @app.get("/predictions")
 async def get_predictions(
     limit: int = Query(100, ge=1, le=500),
