@@ -196,7 +196,7 @@ def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS,
     # Clamp final strengths to reasonable bounds. Attack capped at league avg × 1.5
     # (top teams create ~50% more xG than average, not 100%+). Defense floored at 0.3.
     avg = league_avg_goals(league_id)
-    max_attack = avg * 1.5  # EPL: 2.1, MLS: 2.33, Liga MX: 2.03
+    max_attack = avg * 1.3  # EPL: 1.82, MLS: 2.02, Liga MX: 1.76
     return (min(recent_for, max_attack), max(recent_against, 0.3))
 
 
