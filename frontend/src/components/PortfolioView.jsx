@@ -78,8 +78,12 @@ function StatCard({ label, primary, secondary, tone = 'neutral' }) {
   )
 }
 
-function SummaryCards({ summary, filtered = false }) {
+function SummaryCards({ summary, filtered = false, openBets = [] }) {
   if (!summary) return null
+  // Total potential profit if all open bets win
+  const totalIfWin = openBets
+    .filter(b => b.status === 'open')
+    .reduce((sum, b) => sum + ((b.stake || 0) * ((b.odds_at_placement || 1) - 1)), 0)
   const realizedTone = summary.realized_pnl > 0 ? 'good' : summary.realized_pnl < 0 ? 'bad' : 'neutral'
   const expectedTone = summary.expected_pnl > 0 ? 'accent' : 'neutral'
   const totalBets = summary.open_bets_count + summary.settled_bets_count + summary.void_bets_count
@@ -105,12 +109,20 @@ function SummaryCards({ summary, filtered = false }) {
   }
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
       <StatCard
         label="Total staked"
         primary={fmtMoney(summary.total_invested)}
         secondary={`${totalBets} bet${totalBets === 1 ? '' : 's'} total · ${summary.open_bets_count} open`}
       />
+      {summary.open_bets_count > 0 && (
+        <StatCard
+          label="If all open win"
+          primary={`+${fmtMoney(totalIfWin)}`}
+          secondary={`${summary.open_bets_count} open bet${summary.open_bets_count === 1 ? '' : 's'}`}
+          tone="good"
+        />
+      )}
       <StatCard
         label={valueLabel}
         primary={valuePrimary}
@@ -984,7 +996,7 @@ export default function PortfolioView() {
       {/* Performance benchmark — top of page for at-a-glance tracking */}
       <PerformanceBenchmark league={filters.league || undefined} />
 
-      <SummaryCards summary={filteredSummary} filtered={hasFilters} />
+      <SummaryCards summary={filteredSummary} filtered={hasFilters} openBets={filteredBets} />
 
       <PortfolioByBook
         bets={filteredBets}
