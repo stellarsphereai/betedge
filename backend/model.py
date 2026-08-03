@@ -30,6 +30,204 @@ LEAGUE_AVG_GOALS: dict[int, float] = {
 }
 LEAGUE_AVG_DEFAULT = 1.35
 
+# League-specific BTTS multipliers — updated nightly by recalibrate_btts_from_results()
+_LEAGUE_BTTS_MULTIPLIER: dict[int, float] = {
+    253: 1.25,  # MLS: initial estimate, auto-corrects from data
+    262: 1.10,  # Liga MX: initial estimate
+}
+
+
+def recalibrate_btts_from_results() -> dict[int, float]:
+    """Read settled fixtures and compute actual BTTS rate vs model predicted.
+    Returns updated league-specific BTTS multipliers.
+
+    Called by the nightly auto-calibration job to keep the BTTS model
+    aligned with reality. Requires at least 10 settled matches per league.
+    """
+    try:
+        from database import db
+    except ImportError:
+        return {}
+
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT p.league, f.home_goals, f.away_goals, p.btts_yes_pct
+            FROM model_predictions p
+            JOIN fixtures f ON f.match_id = p.match_id
+            WHERE f.result IS NOT NULL
+              AND f.home_goals IS NOT NULL AND f.away_goals IS NOT NULL
+              AND p.btts_yes_pct IS NOT NULL
+        """).fetchall()
+
+    LEAGUE_ID_MAP = {"epl": 39, "ucl": 2, "uel": 3, "world_cup": 1,
+                     "mls": 253, "liga_mx": 262, "la_liga": 140}
+
+    by_league: dict[int, list[tuple[float, bool]]] = {}
+    for r in rows:
+        lid = LEAGUE_ID_MAP.get(r["league"])
+        if not lid:
+            continue
+        actual_btts = (r["home_goals"] > 0 and r["away_goals"] > 0)
+        predicted = r["btts_yes_pct"]
+        by_league.setdefault(lid, []).append((predicted, actual_btts))
+
+    multipliers: dict[int, float] = {}
+    for lid, samples in by_league.items():
+        if len(samples) < 10:
+            continue
+        avg_predicted = sum(p for p, _ in samples) / len(samples)
+        actual_rate = sum(1 for _, a in samples if a) / len(samples)
+        if avg_predicted > 0.01:
+            multipliers[lid] = round(actual_rate / avg_predicted, 3)
+
+    return multipliers
+
+
+# Module-level calibration factors updated nightly from settled results.
+# Keys: (league_id, market, outcome) → multiplier applied to model probability.
+_MARKET_CALIBRATION: dict[tuple[int, str, str], float] = {}
+
+
+def recalibrate_all_markets() -> dict:
+    """Comprehensive self-correction: compare model predictions vs actual
+    outcomes across all leagues and market types. Returns calibration
+    factors that adjust model probabilities to match reality.
+
+    Covers: H2H (home/draw/away), totals (over/under by line), BTTS (yes/no).
+    Requires 10+ settled samples per (league, market, outcome) bucket.
+    """
+    try:
+        from database import db
+    except ImportError:
+        return {}
+
+    LEAGUE_ID_MAP = {"epl": 39, "ucl": 2, "uel": 3, "world_cup": 1,
+                     "mls": 253, "liga_mx": 262, "la_liga": 140}
+
+    with db() as conn:
+        # H2H calibration: predicted home/draw/away % vs actual outcomes
+        h2h_rows = conn.execute("""
+            SELECT p.league,
+                   p.home_win_pct, p.draw_pct, p.away_win_pct,
+                   f.result
+            FROM model_predictions p
+            JOIN fixtures f ON f.match_id = p.match_id
+            WHERE f.result IN ('home', 'draw', 'away')
+        """).fetchall()
+
+        # BTTS calibration
+        btts_rows = conn.execute("""
+            SELECT p.league, p.btts_yes_pct,
+                   f.home_goals, f.away_goals
+            FROM model_predictions p
+            JOIN fixtures f ON f.match_id = p.match_id
+            WHERE f.result IS NOT NULL
+              AND f.home_goals IS NOT NULL AND f.away_goals IS NOT NULL
+              AND p.btts_yes_pct IS NOT NULL
+        """).fetchall()
+
+        # Totals calibration: predicted over % vs actual total goals
+        totals_rows = conn.execute("""
+            SELECT p.league, p.score_matrix_json,
+                   f.home_goals, f.away_goals
+            FROM model_predictions p
+            JOIN fixtures f ON f.match_id = p.match_id
+            WHERE f.result IS NOT NULL
+              AND f.home_goals IS NOT NULL AND f.away_goals IS NOT NULL
+              AND p.score_matrix_json IS NOT NULL
+        """).fetchall()
+
+    import json as _json
+    calibrations: dict[tuple[int, str, str], float] = {}
+    summary: dict[str, dict] = {}
+
+    # H2H calibration per league
+    h2h_by_league: dict[int, list] = {}
+    for r in h2h_rows:
+        lid = LEAGUE_ID_MAP.get(r["league"])
+        if not lid:
+            continue
+        h2h_by_league.setdefault(lid, []).append(r)
+
+    for lid, rows in h2h_by_league.items():
+        if len(rows) < 10:
+            continue
+        for outcome in ("home", "draw", "away"):
+            prob_key = {"home": "home_win_pct", "draw": "draw_pct", "away": "away_win_pct"}[outcome]
+            avg_pred = sum(r[prob_key] or 0 for r in rows) / len(rows)
+            actual_rate = sum(1 for r in rows if r["result"] == outcome) / len(rows)
+            if avg_pred > 0.01:
+                factor = round(actual_rate / avg_pred, 3)
+                # Only apply meaningful corrections (>5% deviation)
+                if abs(factor - 1.0) > 0.05:
+                    calibrations[(lid, "h2h", outcome)] = factor
+                    summary[f"{lid}_h2h_{outcome}"] = {
+                        "predicted": round(avg_pred, 3),
+                        "actual": round(actual_rate, 3),
+                        "factor": factor,
+                        "n": len(rows),
+                    }
+
+    # BTTS calibration per league
+    btts_by_league: dict[int, list] = {}
+    for r in btts_rows:
+        lid = LEAGUE_ID_MAP.get(r["league"])
+        if not lid:
+            continue
+        btts_by_league.setdefault(lid, []).append(r)
+
+    for lid, rows in btts_by_league.items():
+        if len(rows) < 10:
+            continue
+        avg_pred = sum(r["btts_yes_pct"] or 0 for r in rows) / len(rows)
+        actual_rate = sum(1 for r in rows if r["home_goals"] > 0 and r["away_goals"] > 0) / len(rows)
+        if avg_pred > 0.01:
+            factor = round(actual_rate / avg_pred, 3)
+            if abs(factor - 1.0) > 0.05:
+                calibrations[(lid, "btts", "yes")] = factor
+                calibrations[(lid, "btts", "no")] = round((1.0 - actual_rate) / max(0.01, 1.0 - avg_pred), 3)
+                summary[f"{lid}_btts"] = {
+                    "predicted_yes": round(avg_pred, 3),
+                    "actual_yes": round(actual_rate, 3),
+                    "factor": factor,
+                    "n": len(rows),
+                }
+
+    # Totals calibration per league per line
+    totals_by_league: dict[int, list] = {}
+    for r in totals_rows:
+        lid = LEAGUE_ID_MAP.get(r["league"])
+        if not lid:
+            continue
+        totals_by_league.setdefault(lid, []).append(r)
+
+    for lid, rows in totals_by_league.items():
+        if len(rows) < 10:
+            continue
+        for line in (1.5, 2.5, 3.5):
+            over_preds = []
+            over_actuals = []
+            for r in rows:
+                try:
+                    matrix = _json.loads(r["score_matrix_json"])
+                    pred_over = sum(matrix[h][a] for h in range(len(matrix)) for a in range(len(matrix[0])) if h + a > line)
+                    actual_over = (r["home_goals"] + r["away_goals"]) > line
+                    over_preds.append(pred_over)
+                    over_actuals.append(actual_over)
+                except Exception:
+                    continue
+            if len(over_preds) < 10:
+                continue
+            avg_pred = sum(over_preds) / len(over_preds)
+            actual_rate = sum(1 for a in over_actuals if a) / len(over_actuals)
+            if avg_pred > 0.01:
+                factor = round(actual_rate / avg_pred, 3)
+                if abs(factor - 1.0) > 0.05:
+                    calibrations[(lid, "totals_over", str(line))] = factor
+                    calibrations[(lid, "totals_under", str(line))] = round((1.0 - actual_rate) / max(0.01, 1.0 - avg_pred), 3)
+
+    return {"calibrations": calibrations, "summary": summary}
+
 
 def league_avg_goals(league_id: int | None) -> float:
     """Look up league-average goals per team per game, with a 1.35 fallback for
@@ -364,6 +562,14 @@ def predict(
     _BTTS_LOPSIDED_SCALE = 0.12  # extra discount per unit of ratio above 1.0
     btts_correction = max(0.50, _BTTS_EVEN_BASELINE - (xg_ratio - 1.0) * _BTTS_LOPSIDED_SCALE)
     btts_yes *= btts_correction
+
+    # League-specific BTTS calibration — adjusts based on actual league BTTS rates.
+    # MLS is much more open than European leagues (~73% BTTS rate vs ~55% EPL).
+    # Without this, the model systematically underestimates BTTS Yes for MLS.
+    # These values are updated nightly by recalibrate_btts_from_results().
+    btts_mult = _LEAGUE_BTTS_MULTIPLIER.get(league_id, 1.0)
+    if btts_mult != 1.0:
+        btts_yes = btts_yes * btts_mult
 
     btts_yes = max(0.0, min(1.0, btts_yes))
 

@@ -388,7 +388,24 @@ async def job_nightly_model_validation():
 
 async def job_nightly_auto_calibration():
     import automation_tasks
-    return await _wrap("auto_calibration", automation_tasks.task_auto_calibration)
+    result = await _wrap("auto_calibration", automation_tasks.task_auto_calibration)
+    # Self-correction: recalibrate all markets from settled data
+    try:
+        import model
+        # BTTS multipliers
+        btts_mults = model.recalibrate_btts_from_results()
+        if btts_mults:
+            model._LEAGUE_BTTS_MULTIPLIER.update(btts_mults)
+            log.info("btts recalibration: %s", btts_mults)
+        # All markets calibration
+        all_cal = model.recalibrate_all_markets()
+        if all_cal.get("calibrations"):
+            model._MARKET_CALIBRATION.update(all_cal["calibrations"])
+            log.info("market recalibration: %d factors updated | %s",
+                     len(all_cal["calibrations"]), all_cal.get("summary", {}))
+    except Exception:
+        log.exception("recalibration crashed")
+    return result
 
 async def job_nightly_wc_data_prep():
     import automation_tasks
