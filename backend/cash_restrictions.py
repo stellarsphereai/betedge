@@ -53,12 +53,14 @@ def is_market_restricted(
         return False
     m = (market or "h2h").lower()
     o = (outcome or "").lower()
-    # BTTS, totals over, and H2H draw are restricted until paper bets prove
-    # the model. Auto-unlock when 20+ paper bets settled with 50%+ win rate
-    # and CLV >= 0.
+    # BTTS and H2H draw are restricted globally until paper bets prove the model.
+    # MLS H2H home/away is also restricted — the model went 2-8 on MLS H2H in
+    # its first week. Auto-unlock when 20+ paper bets settled with 50%+ win rate.
+    lg = (league or "").lower()
     is_restricted = (
         m in RESTRICTED_CASH_MARKETS
         or (m == "h2h" and o == "draw")
+        or (m == "h2h" and o in ("home", "away") and lg == "mls")
     )
     if is_restricted:
         # Per-league unlock: each league must independently prove the model
@@ -157,7 +159,11 @@ def goal_market_paper_progress(league: Optional[str] = None) -> dict:
             FROM bets_placed b
             LEFT JOIN model_predictions p ON p.match_id = b.match_id
             WHERE b.is_paper = 1
-              AND (b.market IN ('btts','totals') OR (b.market = 'h2h' AND b.bet_type = 'draw'))
+              AND (
+                b.market IN ('btts','totals')
+                OR (b.market = 'h2h' AND b.bet_type = 'draw')
+                OR (b.market = 'h2h' AND b.bet_type IN ('home','away') AND p.league = 'mls')
+              )
         """
         params: list = []
         if league:

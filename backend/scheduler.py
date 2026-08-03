@@ -88,9 +88,14 @@ async def job_auto_paper_bets():
     (match_id, market, market_line, bet_type) for open bets."""
     log.info("scheduler: auto-paper sweep")
     import httpx
-    AUTO_PAPER_MARKETS = {
+    # Markets that are always auto-papered across all leagues
+    GLOBAL_PAPER_MARKETS = {
         ("btts", "yes"), ("btts", "no"),
         ("h2h", "draw"),
+    }
+    # Per-league markets that need paper validation before cash
+    LEAGUE_PAPER_MARKETS = {
+        "mls": {("h2h", "home"), ("h2h", "away")},
     }
     placed = 0
     skipped = 0
@@ -104,10 +109,11 @@ async def job_auto_paper_bets():
                 log.warning("auto-paper: %s ev-bets fetch failed: %s", league, e)
                 errors += 1
                 continue
+            league_extra = LEAGUE_PAPER_MARKETS.get(league, set())
             for bet in data.get("bets", []):
                 market = (bet.get("market") or "").lower()
                 outcome = (bet.get("outcome") or "").lower()
-                if (market, outcome) not in AUTO_PAPER_MARKETS:
+                if (market, outcome) not in GLOBAL_PAPER_MARKETS and (market, outcome) not in league_extra:
                     continue
                 try:
                     clv_tracker.log_bet(
