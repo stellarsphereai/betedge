@@ -44,7 +44,7 @@ LEAGUE_TO_API_FOOTBALL = {
 # so all fixtures (group + early knockout) land in a single sync. WC's 35
 # days covers the entire group stage in one pull and continues catching
 # knockouts as they're scheduled into the API.
-LOOKAHEAD_DAYS_BY_LEAGUE = {"epl": 7, "ucl": 14, "uel": 14, "world_cup": 35, "la_liga": 7, "mls": 7, "liga_mx": 21}
+LOOKAHEAD_DAYS_BY_LEAGUE = {"epl": 7, "ucl": 14, "uel": 14, "world_cup": 35, "la_liga": 7, "mls": 7, "liga_mx": 21, "la_liga": 14}
 LOOKAHEAD_DAYS_DEFAULT = 7
 RECENT_FORM_WINDOW = 10  # last 10 matches blended with season-long averages
 
@@ -605,8 +605,10 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                         force=force,
                     )
                     # For leagues with split seasons (Liga MX Apertura/Clausura),
-                    # supplement with prior season if current season has < 5 matches
-                    if len(recent) < 5 and league == "liga_mx":
+                    # Supplement with prior season if current season has < 5 matches.
+                    # Applies to all leagues at season start (EPL Aug, La Liga Aug,
+                    # Liga MX Jul, etc.) — ensures predictions from day 1.
+                    if len(recent) < 5:
                         prev_season = season - 1
                         prev = await api_football.team_recent_fixtures(
                             client, tid, last=RECENT_FORM_WINDOW - len(recent),
