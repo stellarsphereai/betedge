@@ -821,15 +821,21 @@ async def get_ev_bets(
             anomaly_downgrade = any(f.downgrades_to_low for f in bet_flags)
             if anomaly_downgrade:
                 row["confidence"] = "LOW"
-            row["anomaly_flags"] = [
-                {
-                    "type": f.anomaly_type,
-                    "description": f.description,
-                    "excludes_bet": f.excludes_bet,
-                    "downgrades_to_low": f.downgrades_to_low,
-                }
-                for f in bet_flags
-            ]
+            # Deduplicate anomaly flags — same type+outcome can appear from
+            # multiple book lookups (sharp diverge checked per book)
+            seen_flags = set()
+            deduped_flags = []
+            for f in bet_flags:
+                key = (f.anomaly_type, round(f.model_prob or 0, 3))
+                if key not in seen_flags:
+                    seen_flags.add(key)
+                    deduped_flags.append({
+                        "type": f.anomaly_type,
+                        "description": f.description,
+                        "excludes_bet": f.excludes_bet,
+                        "downgrades_to_low": f.downgrades_to_low,
+                    })
+            row["anomaly_flags"] = deduped_flags
             if bet_flags:
                 anomaly.log_many(bet_flags)
 
