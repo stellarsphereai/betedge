@@ -387,15 +387,17 @@ def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS,
         hi = avg * _SEASON_AVG_CLAMP
         sa_for = max(lo, min(hi, form.season_avg_for))
         sa_against = max(lo, min(hi, form.season_avg_against))
-        return (
-            recent_for * b + sa_for * (1 - b),
-            recent_against * b + sa_against * (1 - b),
-        )
-    # Clamp final strengths to reasonable bounds. Attack capped at league avg × 1.5
-    # (top teams create ~50% more xG than average, not 100%+). Defense floored at 0.3.
+        blended_for = recent_for * b + sa_for * (1 - b)
+        blended_against = recent_against * b + sa_against * (1 - b)
+    else:
+        blended_for = recent_for
+        blended_against = recent_against
+
+    # Clamp final strengths to reasonable bounds — always applied, whether
+    # blended with season avg or not. Attack capped at league avg × 1.3.
     avg = league_avg_goals(league_id)
     max_attack = avg * 1.3  # EPL: 1.82, MLS: 2.02, Liga MX: 1.76
-    return (min(recent_for, max_attack), max(recent_against, 0.3))
+    return (min(blended_for, max_attack), max(blended_against, 0.3))
 
 
 def _poisson_pmf(k: int, lam: float) -> float:
