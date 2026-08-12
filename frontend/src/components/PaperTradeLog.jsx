@@ -413,7 +413,8 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeC
             <th className="text-right">P/L</th>
             <th className="text-left">Match outcome</th>
             <th className="text-center">Status</th>
-            <th className="text-left">When</th>
+            <th className="text-left">Kickoff</th>
+            <th className="text-left">Placed</th>
             <th className="text-center pr-3">Actions</th>
           </tr>
         </thead>
@@ -449,6 +450,7 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeC
                 <td className="text-center">
                   <MarkResultControl bet={b} onMark={onMarkResult} />
                 </td>
+                <td className="text-slate-400">{b.match_kickoff ? fmtTime(b.match_kickoff) : '—'}</td>
                 <td className="text-slate-400">{fmtTime(b.timestamp)}</td>
                 <td className="text-center px-2 whitespace-nowrap">
                   <ActionsCell bet={b} onDeleted={onDeleteBet} onModeChanged={onModeChangeBet} />
