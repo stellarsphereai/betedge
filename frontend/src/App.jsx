@@ -29,7 +29,7 @@ export default function App() {
     try { localStorage.setItem('betedge_theme', theme) } catch {}
   }, [theme])
   const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light')
-  const [windowHours, setWindowHours] = useState(72)
+  const [windowHours, setWindowHours] = useState(14*24)
   const [flashedMatchId, setFlashedMatchId] = useState(null)
   const [stats, setStats] = useState(null)
   const [ev, setEv] = useState(null)
