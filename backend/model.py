@@ -395,7 +395,7 @@ def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS,
         # the model has no baseline. A team with 2.5 xG from one blowout
         # won't be treated as a 2.5 xG team — it'll regress toward ~1.4.
         # Shrinkage weight: 30% league avg, 70% recent form.
-        _EARLY_SEASON_SHRINKAGE = 0.30
+        _EARLY_SEASON_SHRINKAGE = 0.40
         avg = league_avg_goals(league_id)
         blended_for = recent_for * (1 - _EARLY_SEASON_SHRINKAGE) + avg * _EARLY_SEASON_SHRINKAGE
         blended_against = recent_against * (1 - _EARLY_SEASON_SHRINKAGE) + avg * _EARLY_SEASON_SHRINKAGE
@@ -540,7 +540,11 @@ def predict(
     # (midweek → weekend EPL) is common — use ≤3, not <3.
     games = min(len(home.xg_for), len(away.xg_for))
     rested = abs(rest_diff) <= 3
-    if games >= 5 and rested:
+    # No season averages = early season = LOW confidence regardless of games
+    has_season_data = (home.season_avg_for is not None and away.season_avg_for is not None)
+    if not has_season_data:
+        confidence = "LOW"
+    elif games >= 5 and rested:
         confidence = "HIGH"
     elif games >= 3:
         confidence = "MEDIUM"
