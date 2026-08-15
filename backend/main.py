@@ -728,17 +728,34 @@ async def get_ev_bets(
                     continue  # model says away is more likely
                 if b.outcome == "away" and a_prob < h_prob:
                     continue  # model says home is more likely
-            # Consistency check: don't bet over if predicted total xG is below the line
-            # (and vice versa for under). Prevents contradictions where the most likely
-            # score implies fewer goals than the over line.
+            # Consistency check: the bet must agree with the predicted score.
+            # Two checks — predicted score total AND xG must both support the bet.
             if b.market == "totals" and b.market_line is not None:
                 total_xg = (p["home_xg"] or 0) + (p["away_xg"] or 0)
-                # Require xG to be at least 0.5 above the line for overs —
-                # a 3.51 xG shouldn't bet Over 3.5 when predicted score is 1-1
+                # Check 1: xG must be meaningfully above/below the line
                 if b.outcome == "over" and total_xg < b.market_line + 0.5:
                     continue
                 if b.outcome == "under" and total_xg > b.market_line + 0.5:
                     continue
+                # Check 2: predicted score must also agree
+                try:
+                    score_json = p.get("score_matrix_json")
+                    if score_json:
+                        import json as _json
+                        matrix = _json.loads(score_json)
+                        # Find the most likely score
+                        best_h, best_a, best_p = 0, 0, 0
+                        for h in range(len(matrix)):
+                            for a in range(len(matrix[0])):
+                                if matrix[h][a] > best_p:
+                                    best_h, best_a, best_p = h, a, matrix[h][a]
+                        predicted_total = best_h + best_a
+                        if b.outcome == "over" and predicted_total <= b.market_line:
+                            continue  # predicted score is under the line
+                        if b.outcome == "under" and predicted_total > b.market_line:
+                            continue  # predicted score is over the line
+                except Exception:
+                    pass
             offers = offer_lookup.get((b.market, b.market_line)) or {}
             outcome_offers = {bk: o[b.outcome] for bk, o in offers.items() if b.outcome in o}
             shop = line_shopper.best_line(outcome_offers, opening_odds=None, edge=b.edge)
