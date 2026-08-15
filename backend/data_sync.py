@@ -616,6 +616,18 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                             force=force,
                         )
                         recent = recent + prev
+                    # For promoted teams with still < 3 matches, try fetching
+                    # from ANY league in prior season (e.g., Championship for
+                    # EPL promoted teams). Without league filter, API-Football
+                    # returns their most recent matches regardless of competition.
+                    if len(recent) < 3:
+                        any_league = await api_football.team_recent_fixtures(
+                            client, tid, last=RECENT_FORM_WINDOW,
+                            league=None, season=None,
+                            force=force,
+                        )
+                        if any_league:
+                            recent = recent + [f for f in any_league if f not in recent]
                     team_recent[tid] = recent
             except api_football.PlanError as e:
                 summary["errors"].append(f"team-recent blocked ({e})")
