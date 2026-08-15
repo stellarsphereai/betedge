@@ -718,6 +718,31 @@ async def get_ev_bets(
             min_odds = MIN_ODDS_BY_MARKET.get(market_key, MIN_ODDS)
             if b.decimal_odds < min_odds:
                 continue
+            # Promoted team guard: don't bet on matches involving newly promoted
+            # teams for their first 5 matches. Their lower-division form data
+            # doesn't translate to the top tier.
+            PROMOTED_TEAMS_2026 = {
+                # EPL promoted from Championship
+                "epl": {"Coventry", "Hull City", "Ipswich Town"},
+                # La Liga promoted from Segunda
+                "la_liga": {"Racing Santander", "Deportivo La Coruña", "Malaga", "Elche"},
+            }
+            promoted = PROMOTED_TEAMS_2026.get(league, set())
+            if promoted:
+                from team_aliases import canonical
+                home_canonical = canonical(p["home_team"])
+                away_canonical = canonical(p["away_team"])
+                if home_canonical in promoted or away_canonical in promoted:
+                    # Check how many matches the promoted team has played
+                    promoted_team = home_canonical if home_canonical in promoted else away_canonical
+                    with db() as _conn:
+                        played = _conn.execute(
+                            "SELECT COUNT(*) FROM fixtures WHERE league = ? AND result IS NOT NULL AND (home_team = ? OR away_team = ?)",
+                            (league, promoted_team, promoted_team),
+                        ).fetchone()[0]
+                    if played < 5:
+                        continue  # skip — not enough top-tier data yet
+
             # H2H consistency: don't bet on an outcome the model says is less likely
             # than the alternative. E.g., don't bet Santos away (33.6%) when the model
             # says América home (40.6%) is more likely.
