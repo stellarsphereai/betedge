@@ -739,7 +739,7 @@ async def get_ev_bets(
                     continue
                 # Check 2: predicted score must also agree
                 try:
-                    score_json = p.get("score_matrix_json")
+                    score_json = p["score_matrix_json"]
                     if score_json:
                         import json as _json
                         matrix = _json.loads(score_json)
