@@ -164,6 +164,7 @@ def goal_market_paper_progress(league: Optional[str] = None) -> dict:
                 OR (b.market = 'h2h' AND b.bet_type = 'draw')
                 OR (b.market = 'h2h' AND b.bet_type IN ('home','away') AND p.league = 'mls')
               )
+              AND b.timestamp >= '2026-08-01'
         """
         params: list = []
         if league:
