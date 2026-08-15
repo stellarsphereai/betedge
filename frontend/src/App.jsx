@@ -53,7 +53,7 @@ export default function App() {
       const [s, e, p, b, ts, bt, an, mh, rs] = await Promise.all([
         api.stats(),
         api.evBets(5000, 0.03, leagueRef.current, { force }),
-        api.predictions(50),
+        api.predictions(200),
         api.bets(200),
         api.timeseries(),
         api.backtestResult().catch(() => null),
