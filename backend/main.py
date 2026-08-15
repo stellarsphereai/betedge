@@ -733,9 +733,11 @@ async def get_ev_bets(
             # score implies fewer goals than the over line.
             if b.market == "totals" and b.market_line is not None:
                 total_xg = (p["home_xg"] or 0) + (p["away_xg"] or 0)
-                if b.outcome == "over" and total_xg < b.market_line:
+                # Require xG to be at least 0.5 above the line for overs —
+                # a 3.51 xG shouldn't bet Over 3.5 when predicted score is 1-1
+                if b.outcome == "over" and total_xg < b.market_line + 0.5:
                     continue
-                if b.outcome == "under" and total_xg > b.market_line + 1:
+                if b.outcome == "under" and total_xg > b.market_line + 0.5:
                     continue
             offers = offer_lookup.get((b.market, b.market_line)) or {}
             outcome_offers = {bk: o[b.outcome] for bk, o in offers.items() if b.outcome in o}
