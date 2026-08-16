@@ -762,23 +762,25 @@ async def get_ev_bets(
                     continue
                 if b.outcome == "under" and total_xg > b.market_line + 0.5:
                     continue
-                # Check 2: predicted score must also agree
+                # Check 2: predicted score must not be dramatically different.
+                # Only block when predicted score is 2+ goals away from the line.
+                # A 1-1 prediction (2 goals) shouldn't block Over 2.5 when xG is 3.5
+                # because 1-1 is only ~10% likely — but it SHOULD block Over 4.5.
                 try:
                     score_json = p["score_matrix_json"]
                     if score_json:
                         import json as _json
                         matrix = _json.loads(score_json)
-                        # Find the most likely score
                         best_h, best_a, best_p = 0, 0, 0
                         for h in range(len(matrix)):
                             for a in range(len(matrix[0])):
                                 if matrix[h][a] > best_p:
                                     best_h, best_a, best_p = h, a, matrix[h][a]
                         predicted_total = best_h + best_a
-                        if b.outcome == "over" and predicted_total <= b.market_line:
-                            continue  # predicted score is under the line
-                        if b.outcome == "under" and predicted_total > b.market_line:
-                            continue  # predicted score is over the line
+                        if b.outcome == "over" and predicted_total + 2 <= b.market_line:
+                            continue  # predicted score is 2+ goals below the line
+                        if b.outcome == "under" and predicted_total >= b.market_line + 2:
+                            continue  # predicted score is 2+ goals above the line
                 except Exception:
                     pass
             offers = offer_lookup.get((b.market, b.market_line)) or {}
