@@ -95,7 +95,7 @@ async def job_auto_paper_bets():
     }
     # Per-league markets that need paper validation before cash
     LEAGUE_PAPER_MARKETS = {
-        "mls": {("h2h", "home"), ("h2h", "away")},
+        "mls": {("h2h", "home"), ("h2h", "away"), ("totals", "over")},
     }
     placed = 0
     skipped = 0
