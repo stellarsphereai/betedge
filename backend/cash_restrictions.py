@@ -62,7 +62,7 @@ def is_market_restricted(
         m in RESTRICTED_CASH_MARKETS
         or (m == "h2h" and o == "draw")
         or (m == "h2h" and o in ("home", "away") and lg == "mls")
-        or (m == "totals" and o == "over" and lg == "mls")  # 2-6 (25%) on MLS overs
+        or (m == "totals" and o == "over" and lg in ("mls", "liga_mx"))  # overs losing in both
     )
     if is_restricted:
         # Per-league unlock: each league must independently prove the model
