@@ -1124,7 +1124,9 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
                      _json.dumps(prediction.score_matrix),
                      _json.dumps(penalties_combined),
                      match_params.home_gamma,
-                     match_params.season_blend,
+                     # Store actual blend: 1.0 if no season data (early season shrinkage),
+                     # else the configured season_blend
+                     1.0 if (h_season_for is None or a_season_for is None) else match_params.season_blend,
                      anomaly_flagged_int,
                      _json.dumps(home_form.xg_for),
                      _json.dumps(home_form.xg_against),
