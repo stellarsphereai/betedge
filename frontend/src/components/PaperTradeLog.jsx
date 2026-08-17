@@ -326,13 +326,27 @@ function ActionsCell({ bet, onDeleted, onModeChanged }) {
 export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeChangeBet, onStakeUpdated }) {
   const [mode, setMode] = useState('cash')  // 'paper' | 'cash'
   const [leagueFilter, setLeagueFilter] = useState('')  // '' = all
+  const [sortBy, setSortBy] = useState('match_kickoff')
+  const [sortDir, setSortDir] = useState('desc')
   const all = bets || []
   const paperRows = all.filter(b => b.is_paper)
   const cashRows = all.filter(b => !b.is_paper)
   const modeRows = mode === 'paper' ? paperRows : cashRows
-  const rows = leagueFilter
+  const filtered = leagueFilter
     ? modeRows.filter(b => (b.league || b.match_league || '') === leagueFilter)
     : modeRows
+  const rows = [...filtered].sort((a, b) => {
+    const va = a[sortBy], vb = b[sortBy]
+    if (va == null && vb == null) return 0
+    if (va == null) return 1
+    if (vb == null) return -1
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+  function clickSort(col) {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('desc') }
+  }
   // Collect available leagues from current mode's bets for the dropdown
   const availableLeagues = [...new Set(modeRows.map(b => b.league || b.match_league).filter(Boolean))].sort()
 
@@ -400,22 +414,32 @@ export default function PaperTradeLog({ bets, onMarkResult, onDeleteBet, onModeC
       <table className="w-full text-xs">
         <thead className="bg-ink-800 text-[10px] uppercase tracking-wider text-slate-400">
           <tr>
-            <th className="text-left py-2.5 px-3">Match</th>
-            <th className="text-left">Bet</th>
-            <th className="text-left">Book</th>
-            <th className="text-right">Odds</th>
-            <th className="text-right">Closing</th>
-            <th className="text-right" title="Implied probability at placement (1/odds)">Place %</th>
-            <th className="text-right" title="Implied probability at close (1/closing)">Close %</th>
-            <th className="text-right" title="Model's predicted probability for this outcome">Model %</th>
-            <th className="text-right">CLV</th>
-            <th className="text-right">Stake</th>
-            <th className="text-right">P/L</th>
-            <th className="text-left">Match outcome</th>
-            <th className="text-center">Status</th>
-            <th className="text-left">Kickoff</th>
-            <th className="text-left">Placed</th>
-            <th className="text-center pr-3">Actions</th>
+            {[
+              ['home_team', 'Match', 'left'],
+              ['bet_type', 'Bet', 'left'],
+              ['book', 'Book', 'left'],
+              ['odds_at_placement', 'Odds', 'right'],
+              ['closing_odds', 'Closing', 'right'],
+              ['placement_implied_prob', 'Place %', 'right'],
+              ['closing_implied_prob', 'Close %', 'right'],
+              ['model_prob', 'Model %', 'right'],
+              ['clv', 'CLV', 'right'],
+              ['stake', 'Stake', 'right'],
+              ['profit', 'P/L', 'right'],
+              [null, 'Match outcome', 'left'],
+              ['status', 'Status', 'center'],
+              ['match_kickoff', 'Kickoff', 'left'],
+              ['timestamp', 'Placed', 'left'],
+              [null, 'Actions', 'center'],
+            ].map(([col, label, align]) => (
+              <th
+                key={label}
+                onClick={col ? () => clickSort(col) : undefined}
+                className={`text-${align} py-2.5 ${label === 'Match' ? 'px-3' : ''} ${label === 'Actions' ? 'pr-3' : ''} ${col ? 'cursor-pointer hover:text-slate-200' : ''}`}
+              >
+                {label}{col && sortBy === col ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
