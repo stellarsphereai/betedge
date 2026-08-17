@@ -40,7 +40,7 @@ LEAGUE_TO_SPORT_KEY = {
     "epl": "soccer_epl",
     "ucl": "soccer_uefa_champs_league",
     "uel": "soccer_uefa_europa_league",
-    "world_cup": "soccer_fifa_world_cup",
+    # "world_cup": "soccer_fifa_world_cup",  # WC 2026 ended — disabled
     "la_liga": "soccer_spain_la_liga",
     "mls": "soccer_usa_mls",
     "liga_mx": "soccer_mexico_ligamx",

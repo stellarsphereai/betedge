@@ -938,7 +938,6 @@ export default function PortfolioView() {
             <option value="la_liga">La Liga</option>
             <option value="ucl">UCL</option>
             <option value="uel">EL</option>
-            <option value="world_cup">World Cup</option>
             <option value="mls">MLS</option>
             <option value="liga_mx">Liga MX</option>
           </select>
@@ -1017,8 +1016,7 @@ export default function PortfolioView() {
               <option value="la_liga">La Liga</option>
               <option value="ucl">UCL</option>
               <option value="uel">EL</option>
-              <option value="world_cup">World Cup</option>
-            <option value="mls">MLS</option>
+              <option value="mls">MLS</option>
             <option value="liga_mx">Liga MX</option>
             </select>
             <select

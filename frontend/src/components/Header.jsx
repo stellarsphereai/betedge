@@ -21,7 +21,7 @@ export default function Header({ league, onLeagueChange, windowHours, onWindowCh
     { id: 'epl', label: 'EPL' },
     { id: 'ucl', label: 'UCL' },
     { id: 'uel', label: 'UEL' },
-    { id: 'world_cup', label: 'World Cup' },
+    // { id: 'world_cup', label: 'World Cup' },  // WC 2026 ended
     { id: 'la_liga', label: 'La Liga' },
     { id: 'mls', label: 'MLS' },
     { id: 'liga_mx', label: 'Liga MX' },
@@ -29,7 +29,7 @@ export default function Header({ league, onLeagueChange, windowHours, onWindowCh
 
   // Only the World Cup is the live-recommendation league per spec; everything
   // else is paper-trade until the model is validated against real outcomes.
-  const isPaper = league !== 'world_cup'
+  const isPaper = false  // all leagues are real-money now
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 mb-6">

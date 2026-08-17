@@ -49,8 +49,9 @@ def is_market_restricted(
     paper win rate ≥ 50%" unlock criteria would never trigger. The
     user explicitly opted into real-money WC play, so don't paternalise
     them out of the goal markets the model is actually pricing."""
-    if (league or "").lower() == "world_cup":
-        return False
+    # WC bypass removed — WC 2026 ended
+    # if (league or "").lower() == "world_cup":
+    #     return False
     m = (market or "h2h").lower()
     o = (outcome or "").lower()
     # BTTS and H2H draw are restricted globally until paper bets prove the model.
@@ -74,8 +75,9 @@ def is_market_restricted(
 
 def _min_edge_for_league(league: Optional[str]) -> float:
     lg = (league or "").lower()
-    if lg == "world_cup":
-        return CASH_MIN_EDGE_WC
+    # WC ended — keep the constant for reference but don't use it
+    # if lg == "world_cup":
+    #     return CASH_MIN_EDGE_WC
     if lg in ("mls", "liga_mx"):
         return CASH_MIN_EDGE_MLS
     return CASH_MIN_EDGE
