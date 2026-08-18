@@ -34,10 +34,10 @@ async def fetch_odds(
     client: httpx.AsyncClient,
     sport_key: str,
     regions: str = "us,us2",
-    markets: str = "h2h,totals",
+    markets: str = "h2h,totals,spreads",
 ) -> list[dict]:
-    """Sport-level odds. Note: btts is NOT supported on this endpoint — use
-    fetch_event_btts() per fixture for that market."""
+    """Sport-level odds. Includes H2H, totals, and Asian handicap (spreads).
+    btts and double_chance are per-event only."""
     api_key = os.getenv("ODDS_API_KEY", "")
     if not api_key:
         raise RuntimeError("ODDS_API_KEY not set")
@@ -95,6 +95,54 @@ async def fetch_event_alternate_totals(
         "apiKey": api_key,
         "regions": regions,
         "markets": "alternate_totals",
+        "oddsFormat": "decimal",
+    }
+    r = await client.get(url, params=params, timeout=20.0)
+    if not r.is_success:
+        return []
+    data = r.json()
+    return data.get("bookmakers", []) or []
+
+
+async def fetch_event_double_chance(
+    client: httpx.AsyncClient,
+    sport_key: str,
+    event_id: str,
+    regions: str = "us,us2",
+) -> list[dict]:
+    """Per-fixture double chance. Outcomes: 1X (home/draw), X2 (draw/away), 12 (home/away)."""
+    api_key = os.getenv("ODDS_API_KEY", "")
+    if not api_key:
+        return []
+    url = f"{ODDS_API_BASE}/sports/{sport_key}/events/{event_id}/odds"
+    params = {
+        "apiKey": api_key,
+        "regions": regions,
+        "markets": "double_chance",
+        "oddsFormat": "decimal",
+    }
+    r = await client.get(url, params=params, timeout=20.0)
+    if not r.is_success:
+        return []
+    data = r.json()
+    return data.get("bookmakers", []) or []
+
+
+async def fetch_event_alternate_spreads(
+    client: httpx.AsyncClient,
+    sport_key: str,
+    event_id: str,
+    regions: str = "us,us2",
+) -> list[dict]:
+    """Per-fixture alternate Asian handicap lines."""
+    api_key = os.getenv("ODDS_API_KEY", "")
+    if not api_key:
+        return []
+    url = f"{ODDS_API_BASE}/sports/{sport_key}/events/{event_id}/odds"
+    params = {
+        "apiKey": api_key,
+        "regions": regions,
+        "markets": "alternate_spreads",
         "oddsFormat": "decimal",
     }
     r = await client.get(url, params=params, timeout=20.0)
@@ -196,6 +244,8 @@ def parse_all_markets(match: dict) -> dict:
     h2h: dict[str, dict[str, float]] = {}
     btts: dict[str, dict[str, float]] = {}
     totals: dict[float, dict[str, dict[str, float]]] = {}
+    spreads: dict[float, dict[str, dict[str, float]]] = {}
+    double_chance: dict[str, dict[str, float]] = {}
 
     for bm in match.get("bookmakers", []) or []:
         bm_key = (bm.get("key") or "").lower()
@@ -247,10 +297,42 @@ def parse_all_markets(match: dict) -> dict:
                     if "over" in row and "under" in row:
                         totals.setdefault(line, {})[title] = row
 
+            elif mkey in ("spreads", "alternate_spreads"):
+                # Asian handicap — group by point (line), outcomes are home/away team names
+                by_point_sp: dict[float, dict[str, float]] = {}
+                for o in outcomes:
+                    p, n = o.get("price"), o.get("name")
+                    pt = o.get("point")
+                    if not isinstance(p, (int, float)) or p <= 1.0 or pt is None:
+                        continue
+                    line = float(pt)
+                    by_point_sp.setdefault(line, {})
+                    if n == home:  by_point_sp[line]["home"] = float(p)
+                    elif n == away: by_point_sp[line]["away"] = float(p)
+                for line, row in by_point_sp.items():
+                    if "home" in row and "away" in row:
+                        spreads.setdefault(line, {})[title] = row
+
+            elif mkey == "double_chance":
+                row = {}
+                for o in outcomes:
+                    p, n = o.get("price"), (o.get("name") or "").strip()
+                    if not isinstance(p, (int, float)) or p <= 1.0:
+                        continue
+                    # Odds API uses "Home/Draw", "Draw/Away", "Home/Away" or "1X", "X2", "12"
+                    nl = n.lower().replace("/", "").replace(" ", "")
+                    if nl in ("homedraw", "1x"):     row["1X"] = float(p)
+                    elif nl in ("drawaway", "x2"):   row["X2"] = float(p)
+                    elif nl in ("homeaway", "12"):    row["12"] = float(p)
+                if row:
+                    double_chance[title] = row
+
     return {
         "home_team": home,
         "away_team": away,
         "h2h": h2h,
         "btts": btts,
         "totals": totals,
+        "spreads": spreads,
+        "double_chance": double_chance,
     }

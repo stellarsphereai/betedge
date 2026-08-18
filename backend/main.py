@@ -539,6 +539,19 @@ async def get_ev_bets(
                 odds_client.merge_alternate_totals_into_match(m, alt_books)
             except Exception:
                 pass  # alternate totals best-effort
+            try:
+                dc_books = await odds_client.fetch_event_double_chance(client, sport_key, m["id"])
+                # Merge double chance into match bookmakers
+                for bm in dc_books:
+                    dc_markets = [mk for mk in bm.get("markets", []) if mk.get("key") == "double_chance"]
+                    if dc_markets:
+                        existing = next((b for b in m.get("bookmakers", []) if b.get("key") == bm.get("key")), None)
+                        if existing:
+                            existing.setdefault("markets", []).extend(dc_markets)
+                        else:
+                            m.setdefault("bookmakers", []).append(bm)
+            except Exception:
+                pass  # double chance best-effort
 
     by_pair: dict[tuple[str, str], dict] = {
         _key(m["home_team"], m["away_team"]): m for m in raw
@@ -711,6 +724,54 @@ async def get_ev_bets(
                         outcomes=("over", "under"),
                     )
                     offer_lookup[("totals", line)] = by_book
+
+        # Asian handicap scan — derive probabilities from score matrix
+        if markets.get("spreads") and p["score_matrix_json"]:
+            try:
+                matrix = json.loads(p["score_matrix_json"])
+            except Exception:
+                matrix = None
+            if matrix:
+                for line, by_book in markets["spreads"].items():
+                    # P(home covers line) = P(home_goals - away_goals > -line)
+                    # line is from home perspective: -0.5 means home gives 0.5 goal start
+                    home_cover = sum(
+                        matrix[h][a]
+                        for h in range(len(matrix))
+                        for a in range(len(matrix[0]))
+                        if (h - a) > -line  # home_goals - away_goals > -line
+                    )
+                    raw = {"home": home_cover, "away": 1.0 - home_cover}
+                    ev_bets += ev_calculator.find_ev_bets_market(
+                        market="spreads", market_label=f"AH {line:+.1f}", market_line=line,
+                        match_id=p["match_id"],
+                        home_team=p["home_team"], away_team=p["away_team"],
+                        model_probs=raw,
+                        confidence=p["confidence"],
+                        offers_by_book=by_book,
+                        min_edge=effective_min_edge,
+                        outcomes=("home", "away"),
+                    )
+                    offer_lookup[("spreads", line)] = by_book
+
+        # Double chance scan — simple addition of H2H probabilities
+        if markets.get("double_chance"):
+            dc_probs = {
+                "1X": (p["home_win_pct"] or 0) + (p["draw_pct"] or 0),
+                "X2": (p["draw_pct"] or 0) + (p["away_win_pct"] or 0),
+            }
+            # Skip "12" (home or away) — it's ~1.0 so never has edge
+            ev_bets += ev_calculator.find_ev_bets_market(
+                market="double_chance", market_label="Double Chance", market_line=None,
+                match_id=p["match_id"],
+                home_team=p["home_team"], away_team=p["away_team"],
+                model_probs=dc_probs,
+                confidence=p["confidence"],
+                offers_by_book=markets["double_chance"],
+                min_edge=effective_min_edge,
+                outcomes=("1X", "X2"),
+            )
+            offer_lookup[("double_chance", None)] = markets["double_chance"]
 
         for b in ev_bets:
             # Per-market minimum odds — totals under needs 1.80+, draws need 2.50+
