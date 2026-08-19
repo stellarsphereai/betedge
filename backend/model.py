@@ -24,8 +24,8 @@ LEAGUE_AVG_GOALS: dict[int, float] = {
     2:  1.35,   # UCL
     3:  1.30,   # Europa League
     1:  1.20,   # World Cup
-    253: 1.55,  # MLS (~3.10 goals/game ÷ 2, higher-scoring league)
-    262: 1.35,  # Liga MX (~2.70 goals/game ÷ 2)
+    253: 1.35,  # MLS — was 1.55 but model predicted 3.00 vs actual 2.30; recalibrated
+    262: 1.25,  # Liga MX — was 1.35, tightened after -40% ROI on paper bets
     140: 1.35,  # La Liga (~2.70 goals/game ÷ 2)
 }
 LEAGUE_AVG_DEFAULT = 1.35
