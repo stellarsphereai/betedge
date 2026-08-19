@@ -298,32 +298,42 @@ def parse_all_markets(match: dict) -> dict:
                         totals.setdefault(line, {})[title] = row
 
             elif mkey in ("spreads", "alternate_spreads"):
-                # Asian handicap — group by point (line), outcomes are home/away team names
+                # Asian handicap — group by the HOME team's point (line).
+                # Odds API gives home point=-2.0 and away point=+2.0 for
+                # the same line, so we normalize to the home perspective.
                 by_point_sp: dict[float, dict[str, float]] = {}
                 for o in outcomes:
                     p, n = o.get("price"), o.get("name")
                     pt = o.get("point")
                     if not isinstance(p, (int, float)) or p <= 1.0 or pt is None:
                         continue
-                    line = float(pt)
-                    by_point_sp.setdefault(line, {})
-                    if n == home:  by_point_sp[line]["home"] = float(p)
-                    elif n == away: by_point_sp[line]["away"] = float(p)
+                    if n == home:
+                        line = float(pt)
+                        by_point_sp.setdefault(line, {})["home"] = float(p)
+                    elif n == away:
+                        # Away point is the negation of the home line
+                        line = -float(pt)
+                        by_point_sp.setdefault(line, {})["away"] = float(p)
                 for line, row in by_point_sp.items():
                     if "home" in row and "away" in row:
                         spreads.setdefault(line, {})[title] = row
 
             elif mkey == "double_chance":
                 row = {}
+                home_lc = (home or "").lower()
+                away_lc = (away or "").lower()
                 for o in outcomes:
                     p, n = o.get("price"), (o.get("name") or "").strip()
                     if not isinstance(p, (int, float)) or p <= 1.0:
                         continue
-                    # Odds API uses "Home/Draw", "Draw/Away", "Home/Away" or "1X", "X2", "12"
-                    nl = n.lower().replace("/", "").replace(" ", "")
-                    if nl in ("homedraw", "1x"):     row["1X"] = float(p)
-                    elif nl in ("drawaway", "x2"):   row["X2"] = float(p)
-                    elif nl in ("homeaway", "12"):    row["12"] = float(p)
+                    nl = n.lower()
+                    # Odds API formats: "Home/Draw", "1X", or "Arsenal or Draw"
+                    if nl in ("home/draw", "1x") or (home_lc and home_lc in nl and "draw" in nl):
+                        row["1X"] = float(p)
+                    elif nl in ("draw/away", "x2") or (away_lc and away_lc in nl and "draw" in nl):
+                        row["X2"] = float(p)
+                    elif nl in ("home/away", "12") or (home_lc and away_lc and home_lc in nl and away_lc in nl):
+                        row["12"] = float(p)
                 if row:
                     double_chance[title] = row
 
