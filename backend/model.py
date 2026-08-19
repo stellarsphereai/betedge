@@ -390,15 +390,15 @@ def team_strengths(form: TeamForm, params: ModelParams = DEFAULT_PARAMS,
         blended_for = recent_for * b + sa_for * (1 - b)
         blended_against = recent_against * b + sa_against * (1 - b)
     else:
-        # No season average — shrink recent form toward the league average.
-        # This tempers extreme values at season start (first 5 matches) when
-        # the model has no baseline. A team with 2.5 xG from one blowout
-        # won't be treated as a 2.5 xG team — it'll regress toward ~1.4.
-        # Shrinkage weight: 30% league avg, 70% recent form.
-        _EARLY_SEASON_SHRINKAGE = 0.40
+        # No season average at all — neither current nor prior season data
+        # is available (e.g. newly promoted team). Shrink heavily toward the
+        # league average since the model has no reliable baseline. With the
+        # prior-season fallback in data_sync this path should only be hit
+        # for edge cases; 60% league avg keeps predictions conservative.
+        _NO_BASELINE_SHRINKAGE = 0.60
         avg = league_avg_goals(league_id)
-        blended_for = recent_for * (1 - _EARLY_SEASON_SHRINKAGE) + avg * _EARLY_SEASON_SHRINKAGE
-        blended_against = recent_against * (1 - _EARLY_SEASON_SHRINKAGE) + avg * _EARLY_SEASON_SHRINKAGE
+        blended_for = recent_for * (1 - _NO_BASELINE_SHRINKAGE) + avg * _NO_BASELINE_SHRINKAGE
+        blended_against = recent_against * (1 - _NO_BASELINE_SHRINKAGE) + avg * _NO_BASELINE_SHRINKAGE
 
     # Clamp final strengths to reasonable bounds — always applied, whether
     # blended with season avg or not.

@@ -653,11 +653,30 @@ async def sync_daily(league: str = "epl", force: bool = False, lookahead_days: i
         # 4b. Per-team season averages (goals for/against per match) — feed
         # the blend in model.team_strengths so a hot/cold 10-game stretch is
         # tempered by the team's full-season baseline.
+        # At season start (preseason / first few GWs), the current-season API
+        # returns (None, None) because < 5 matches have been played. Fall back
+        # to the prior season's averages so the model has a baseline instead of
+        # relying on early-season shrinkage toward a generic league average.
         season_avg: dict[int, tuple[float | None, float | None]] = {}
+        prev_season = season - 1
         for tid in team_ids:
             try:
                 ts = await api_football.team_statistics(client, tid, league_id, season, force=force)
-                season_avg[tid] = api_football.season_avg_goals(ts)
+                avg = api_football.season_avg_goals(ts)
+                if avg == (None, None) and league != "world_cup":
+                    # Current season has < 5 matches — try prior season as fallback
+                    try:
+                        prev_ts = await api_football.team_statistics(
+                            client, tid, league_id, prev_season, force=force
+                        )
+                        prev_avg = api_football.season_avg_goals(prev_ts)
+                        if prev_avg != (None, None):
+                            avg = prev_avg
+                            log.info("season_avg fallback: team %s using %d season avg (%.2f/%.2f)",
+                                     team_names.get(tid, tid), prev_season, prev_avg[0], prev_avg[1])
+                    except api_football.PlanError:
+                        pass  # prior season blocked — leave as (None, None)
+                season_avg[tid] = avg
             except api_football.PlanError as e:
                 summary["errors"].append(f"team_stats {tid} blocked ({e})")
                 season_avg[tid] = (None, None)
